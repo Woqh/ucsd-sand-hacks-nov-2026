@@ -14,6 +14,13 @@ export default defineConfig({
   },
   server: {
     // The dashboard calls /api on its own origin, so there's no CORS in dev or prod.
-    proxy: { '/api': process.env.API_PROXY ?? 'http://127.0.0.1:5001' },
+    proxy: {
+      '/api': process.env.API_PROXY ?? 'http://127.0.0.1:5001',
+      // Dev-only: the Camera page's Python model (scripts/model_server.py). Frames stay on this machine.
+      '/local-model': {
+        target: process.env.MODEL_PROXY ?? 'http://127.0.0.1:5002',
+        rewrite: (path) => path.replace(/^\/local-model/, ''),
+      },
+    },
   },
 })

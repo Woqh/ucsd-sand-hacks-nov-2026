@@ -155,6 +155,25 @@ Set these in the shell before `npm run dev` / `npm run build`:
 | `API_PROXY` | `http://127.0.0.1:5001` | Where Vite forwards `/api` if Flask runs elsewhere |
 | `VITE_BASE` | `/` | Serve the dashboard from a sub-path (it also becomes the router basename) |
 
+## Use a laptop camera (Camo)
+
+The dashboard's **Camera** page reads a webcam on this computer, for example the iPhone through
+[Camo](https://camo.com), so the model can be developed against a real feed before the iOS app is
+built. **Full setup guide, including where the trained model goes: [`docs/camera-setup.md`](docs/camera-setup.md).**
+
+In short:
+
+1. Keep **Camo Studio** open with the phone connected and upright (closing it makes the feed black).
+2. Start the API, the dashboard and `python scripts/model_server.py`, open **Camera** in Chrome or
+   Edge, press **Start camera** and pick the Camo source. The page shows a vertical view.
+3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`. That file is a
+   **placeholder** today (it returns `UNKNOWN`); the PyTorch model goes there.
+4. **Send readings to the dashboard** makes the tab act as the phone, so Live, alerts and analytics
+   run off the feed. It replaces any paired phone.
+
+Frames go from the browser tab to the model server on the same computer, are analysed in memory and
+dropped; the hosted API still accepts no images.
+
 ## Simulate the phone
 
 `scripts/simulate.py` acts as the iPhone. It claims a pairing code, then POSTs a posture sample every
@@ -231,8 +250,8 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 | `api/` | Flask API. `core/` is pure, tested logic (state machine, scoring, settings, seed generator); `db.py` is the only file that touches the database; `push/` is APNs + Web Push |
 | `web/` | React + TypeScript + Tailwind dashboard (Vite) |
 | `ios/` | SwiftUI app (see `ios/README.md`; **not yet built**) |
-| `scripts/` | `seed.py`, `simulate.py`, `init_db.py`, `gen_vapid.py`, `check_codemap.py` |
-| `docs/` | `openapi.yaml`, `api.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
+| `scripts/` | `seed.py`, `simulate.py`, `init_db.py`, `gen_vapid.py`, `check_codemap.py`; laptop camera path: `model_server.py`, `posture_model.py` (the model goes here), `camera_test.py` |
+| `docs/` | `openapi.yaml`, `api.md`, `camera-setup.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
 | `features.md` | Analytics and personalization roadmap, Gemini ideas, and what the health evidence does and doesn't support |
 | `pitch.md` | The pitch: mission, demo flow, Data for Good sources, Tiger Data story, built-vs-next, expected Q&A |
 

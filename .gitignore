@@ -13,6 +13,9 @@ __pycache__/
 # local dev database (memory store persists here when DATABASE_URL isn't set)
 .devdb.json
 
+# camera test snapshots (scripts/camera_test.py) - never commit images of people
+scripts/_camera_snapshots/
+
 # web
 node_modules/
 web/dist/

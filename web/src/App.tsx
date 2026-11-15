@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import { useToken } from './hooks'
 import Calibration from './pages/Calibration'
+import Camera from './pages/Camera'
 import Live from './pages/Live'
 import Pair from './pages/Pair'
 import Report from './pages/Report'
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="/coach" element={<Coach />} />
             <Route path="/report" element={<Report />} />
             <Route path="/calibration" element={<Calibration />} />
+            <Route path="/camera" element={<Camera />} />
             <Route path="/settings" element={<Settings />} />
           </>
         ) : null}

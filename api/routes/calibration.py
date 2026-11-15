@@ -75,5 +75,7 @@ def get_calibration():
 def put_calibration():
     body = util.json_body()
     baseline = _validate(body.get("baseline", body))
-    get_store().update_user(g.user["id"], {"calibration": baseline})
+    store = get_store()
+    store.update_user(g.user["id"], {"calibration": baseline})
+    store.add_calibration(g.user["id"], util.now_ms(), baseline)   # history, so posture drift can be seen
     return {"schema": util.SCHEMA, "calibrated": True, "baseline": baseline}

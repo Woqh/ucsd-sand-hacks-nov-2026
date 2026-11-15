@@ -25,6 +25,8 @@ class MemoryStore:
         self.events: list[dict] = []
         self.subs: list[dict] = []
         self.checkins: list[dict] = []
+        self.samples: list[dict] = []
+        self.calibrations: list[dict] = []
         self._next_event_id = 1
         self._next_sub_id = 1
         if path and os.path.exists(path):
@@ -34,6 +36,8 @@ class MemoryStore:
                 self.users, self.sessions = d["users"], d["sessions"]
                 self.events, self.subs = d["events"], d["subs"]
                 self.checkins = d.get("checkins", [])
+                self.samples = d.get("samples", [])
+                self.calibrations = d.get("calibrations", [])
                 self._next_event_id = max([e["id"] for e in self.events], default=0) + 1
                 self._next_sub_id = max([s["id"] for s in self.subs], default=0) + 1
             except Exception:
@@ -45,7 +49,8 @@ class MemoryStore:
         tmp = self._path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"users": self.users, "sessions": self.sessions, "events": self.events,
-                       "subs": self.subs, "checkins": self.checkins}, f)
+                       "subs": self.subs, "checkins": self.checkins,
+                       "samples": self.samples, "calibrations": self.calibrations}, f)
         os.replace(tmp, self._path)
 
     def ping(self) -> tuple[bool, Optional[str]]:
@@ -135,7 +140,50 @@ class MemoryStore:
             self.events = [e for e in self.events if e["user_id"] != user_id]
             self.sessions = {k: s for k, s in self.sessions.items() if s["user_id"] != user_id}
             self.checkins = [c for c in self.checkins if c["user_id"] != user_id]
+            self.samples = [x for x in self.samples if x["user_id"] != user_id]
             self._save()
+
+    # ---- samples
+    def insert_samples(self, rows: list[dict]) -> None:
+        with self._lock:
+            for r in rows:
+                self.samples.append({k: r.get(k) for k in ("user_id", "session_id", "t", "state", "label", "deviation",
+                                                           "confidence", "neck", "torso", "head_fwd")})
+            self._save()
+
+    def list_samples(self, user_id: str, since: int, until: int, limit: int = 50_000) -> list[dict]:
+        with self._lock:
+            out = [x for x in self.samples if x["user_id"] == user_id and since <= x["t"] < until]
+            out.sort(key=lambda x: x["t"])
+            return [{k: v for k, v in x.items() if k != "user_id"} for x in out[:limit]]
+
+    def sample_rollup(self, user_id: str, since: int, until: int) -> list[dict]:
+        """Same shape and semantics as the Postgres store (hourly, per state, UTC hours)."""
+        with self._lock:
+            groups: dict[tuple[int, Any], list[dict]] = {}
+            for x in self.samples:
+                if x["user_id"] == user_id and since <= x["t"] < until:
+                    groups.setdefault(((x["t"] // 3_600_000) * 3_600_000, x["state"]), []).append(x)
+
+            def avg(rows: list[dict], k: str) -> Optional[float]:
+                vals = [r[k] for r in rows if r.get(k) is not None]
+                return sum(vals) / len(vals) if vals else None
+
+            return [{"hour": h, "state": st, "n": len(rows), "avg_dev": avg(rows, "deviation"),
+                     "avg_neck": avg(rows, "neck"), "avg_torso": avg(rows, "torso"),
+                     "avg_head_fwd": avg(rows, "head_fwd")}
+                    for (h, st), rows in sorted(groups.items(), key=lambda kv: (kv[0][0], str(kv[0][1])))]
+
+    # ---- calibration history
+    def add_calibration(self, user_id: str, t: int, baseline: dict) -> None:
+        with self._lock:
+            self.calibrations.append({"user_id": user_id, "t": t, "baseline": copy.deepcopy(baseline)})
+            self._save()
+
+    def list_calibrations(self, user_id: str, limit: int = 20) -> list[dict]:
+        with self._lock:
+            mine = sorted((c for c in self.calibrations if c["user_id"] == user_id), key=lambda c: c["t"], reverse=True)
+            return [{"t": c["t"], "baseline": copy.deepcopy(c["baseline"])} for c in mine[:limit]]
 
     # ---- pain check-ins
     def add_checkin(self, user_id: str, t: int, pain: int, area: Optional[str]) -> dict:

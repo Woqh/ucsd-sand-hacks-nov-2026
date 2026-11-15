@@ -18,6 +18,9 @@ Everything else is qualitative or about the user's own data.
 | Pain & evidence > "How common are back and neck pain?" | Low back pain 619 million people (95% UI 554-694M) in 2020, projected 843 million by 2050; neck pain 203 million (163-253M) in 2020, most common between ages 45 and 74 | Population statistics, worded as "population context, not your risk" | S3 (low back) and S4 (neck), quoted from the abstracts. The card says they describe how widespread the problems are, not an individual's risk, and don't isolate posture. |
 | Pain & evidence > "Your pain vs your slouching" | "In your N weeks of data, weeks with more slouching tended to be weeks with more pain..." | The user's **own** data, not a claim about people in general | No outside source needed, but the wording rules are binding: always "a pattern in your own weeks, not proof that slouching causes pain"; call any pattern *tentative* below 8 weeks; show n and the rank correlation; never present it as a prediction. |
 | Calibration (back-angle check) | "Your back is leaning forward about 18° (aim for within 10° of upright)" | A **product parameter**, not a medical threshold | S5, S6 (see below). The allowed range is 10° either side of upright (forward and back are both refused). It is a product choice that separates the example good (5°) and slouched (18°) values. S5/S6 describe a slight recline as comfortable, which is in tension with the 10° backward limit, so that side may need widening. Tune against real model output. |
+| Coach > Profile, Patterns, Coaching, Habits | "Your posture tends to slip after about N minutes", "You respond best in the morning", "13% of your nudges are followed by sitting up within 30 seconds", streaks and challenges | The user's **own** data, descriptive only | No outside source needed. No health outcome is implied; wording is about habits, never about pain or risk. The Gemini payload contains none of the pain data, and the prompts forbid medical advice. |
+| Coach > Exercises (chin tuck, doorway stretch, shoulder-blade squeeze, stand-and-walk) | Step-by-step instructions plus "Stop if anything hurts. These are general suggestions, not medical advice." | Exercise instructions, **no outcome claims** | Instructions only. Have a clinician/PT sanity-check the wording before any real release. The app never claims an exercise prevents or treats pain. |
+| Coach > Break target | "Stand up every 45 minutes" (`SIT_TARGET_MIN`) | Behavioural default (a fixed product value, not user-adjustable) | **Source needed** before presenting it as guidance rather than a prompt (same status as the Live banner). |
 
 ## Sources reviewed (checked 2026-11-15)
 
@@ -35,6 +38,15 @@ Everything else is qualitative or about the user's own data.
 **Not found:** any source linking sitting posture or slouching to **arthritis**. The search was not
 exhaustive, but there is no basis to claim it. Do not make that claim, and do not show individual predictions
 such as "you will develop X in N years": no validated model supports them (see `features.md` section 4).
+
+## Gemini (sponsor API) data terms
+
+Checked on Google's Gemini API terms page: on the **unpaid** tier, content you send may be used to improve Google's
+products and reviewed by humans, and you must not submit personal or sensitive information; on the **paid** tier it is
+not used that way. (Paraphrased, not quoted.) Terms change, so re-read the current page before the demo. How we comply: only
+de-identified habit numbers are sent, after in-app consent and a preview of the exact payload; **pain check-ins, ids,
+dates and images are never sent**; the README requires a billing-enabled key; nothing returned is stored on our server.
+The prompts also instruct the model not to give medical advice and to use only the numbers provided.
 
 ## Not medical
 

@@ -62,3 +62,23 @@ def test_parse_sample_ok():
 def test_parse_sample_rejects(payload):
     with pytest.raises(SampleError):
         parse_sample(payload)
+
+
+# --------------------------------------------------------------------------- tone and focus mode
+def test_tone_and_focus_defaults_and_validation():
+    s, errs = merge_settings(None, {})
+    assert s["nudgeTone"] == "gentle" and s["focus"] == {"onlyDuringFocus": False, "untilMs": 0}
+    s, errs = merge_settings(None, {"nudgeTone": "direct", "focus": {"onlyDuringFocus": True, "untilMs": 1_731_672_000_000}})
+    assert not errs and s["nudgeTone"] == "direct" and s["focus"] == {"onlyDuringFocus": True, "untilMs": 1_731_672_000_000}
+    for bad in ({"nudgeTone": "angry"}, {"nudgeTone": 3}, {"focus": 1}, {"focus": {"onlyDuringFocus": "yes"}},
+                {"focus": {"untilMs": -1}}, {"focus": {"untilMs": "soon"}}, {"focus": {"untilMs": 9e15}}):
+        assert merge_settings(None, bad)[1], bad
+    # a partial focus update keeps the other field
+    s2, _ = merge_settings(s, {"focus": {"untilMs": 0}})
+    assert s2["focus"] == {"onlyDuringFocus": True, "untilMs": 0}
+
+
+def test_config_carries_focus_mode():
+    c = config_from_settings(merge_settings(None, {"focus": {"onlyDuringFocus": True, "untilMs": 5000}})[0])
+    assert c.focus_only is True and c.focus_until_ms == 5000
+    assert config_from_settings(None).focus_only is False

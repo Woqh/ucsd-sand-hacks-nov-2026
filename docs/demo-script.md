@@ -23,10 +23,12 @@ python scripts/seed.py            # prints  http://localhost:5173/?token=...  an
 3. **Live.** Slouch past the threshold. Show the **Live** page go *Good -> Drifting (nudge countdown) -> Slouching*, the **phone vibrating** (push) and the **desktop notification** firing. Sit up and show it recover to Good.
 4. **Analytics.** Open **Analytics > Week**: score 80, up 13 vs last week, the trend line climbing, the hour-by-weekday heatmap showing afternoons are the problem, the outlook ("on track"), the goal ("67% -> 70%") and the streak. Mention the earlier days were "at risk".
 5. **Pain & evidence.** Analytics > **Pain & evidence**: the 10-second weekly check-in, "your pain vs your slouching" (a pattern in *your* data, not a cause; the demo check-ins are synthetic), the evidence meter ("nobody has shown slouching causes pain"), and the cited population context. Pitch line: "We don't scare you with a made-up 'you'll get arthritis in 10 years'. We show your own data and what the research actually says." Mention Settings > **Your data**: a de-identified export that never leaves the device.
-6. **Privacy + hardware.** "Nothing but numbers leaves the phone: no video, no photos." Show the side-mounted chair setup (`docs/hardware.md`).
+6. **Coach.** Open **Coach**. The profile was just built **on this device**: "you mostly slouch by letting your head drift forward", "your posture slips after about 110 minutes", "Wednesday around 5 PM is your weakest time". Flip to **Patterns** (the fatigue curve and the slip point) and **Coaching** (how fast you sit back up after each kind of nudge; apply one suggested setting with a click). Pitch line: "A detector says *you're slouching*. This says *how you slouch, when it happens, and what works for you*, and it stays in your browser." If Gemini is configured: **See what would be sent** (show the exact numbers, no ids, dates or pain data), tick consent, and build the Gemini profile. The demo history is synthetic, so say so.
+7. **Privacy + hardware.** "Nothing but numbers leaves the phone: no video, no photos." Show the side-mounted chair setup (`docs/hardware.md`).
 
 ## Fallback
 
 - No camera or model yet: the **simulator** (`scripts/simulate.py --loop`) drives the same dashboard and alerts.
 - No push credentials: the Live page, analytics and **Test** buttons still demo everything except the actual vibration; show the recorded clip of the phone buzzing.
+- Gemini unavailable or no key: skip the "Improve with Gemini" click; the on-device profile is the demo. **Gemini has never been run live in this repo, so test it once before you rely on it.**
 - Dashboard down: the recorded demo video.

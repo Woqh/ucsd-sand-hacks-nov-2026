@@ -13,6 +13,7 @@ const icon = (d: ReactNode) => (
 const NAV = [
   { to: '/', label: 'Live', end: true, icon: icon(<path d="M3 12h4l3-8 4 16 3-8h4" />) },
   { to: '/analytics', label: 'Analytics', icon: icon(<path d="M4 20V10M10 20V4M16 20v-8M22 20H2" />) },
+  { to: '/coach', label: 'Coach', icon: icon(<><circle cx="12" cy="8" r="3.500" /><path d="M5 21c0-4 3-6.500 7-6.500s7 2.500 7 6.500" /></>) },
   { to: '/calibration', label: 'Calibrate', icon: icon(<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="2.500" /></>) },
   { to: '/settings', label: 'Settings', icon: icon(<><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></>) },
   { to: '/pair', label: 'Pair', icon: icon(<path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1" />) },
@@ -36,7 +37,7 @@ export default function Layout({ signedIn }: { signedIn: boolean }) {
   const items = signedIn ? NAV : NAV.filter((n) => n.to === '/pair')
   return (
     <div className="min-h-dvh bg-page">
-      <header className="border-b border-line bg-surface">
+      <header className="border-b border-line bg-surface print:hidden">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2.5">
             <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" className="h-7 w-7" />
@@ -62,7 +63,7 @@ export default function Layout({ signedIn }: { signedIn: boolean }) {
       </main>
 
       {/* phone: bottom tab bar (judges may open the dashboard on a phone) */}
-      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-surface sm:hidden" aria-label="Main">
+      <nav className="safe-bottom fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-surface sm:hidden print:hidden" aria-label="Main">
         {items.map((n) => (
           <NavLink
             key={n.to}

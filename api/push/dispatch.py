@@ -6,16 +6,31 @@ from typing import Any
 
 from api.push import apns, webpush
 
-# Gentle escalation: same tone, a bit more insistent each time, then we stop.
-MESSAGES = {
-    1: ("Sit up tall", "You've been slouching a little. Roll your shoulders back and reset."),
-    2: ("Still slouching", "Quick fix: chin tuck, shoulders down, feet flat."),
-    3: ("Take a stretch break?", "Stand up for a minute. Your back will thank you."),
+# Escalation: a bit more insistent each time, then we stop. The user picks the tone in settings
+# (the coach can suggest one based on how they respond; fixed wording, so nothing is generated per nudge).
+MESSAGES_BY_TONE = {
+    "gentle": {
+        1: ("Sit up tall", "You've been slouching a little. Roll your shoulders back and reset."),
+        2: ("Still slouching", "Quick fix: chin tuck, shoulders down, feet flat."),
+        3: ("Take a stretch break?", "Stand up for a minute. Your back will thank you."),
+    },
+    "neutral": {
+        1: ("Posture check", "You've been slouching for a bit. Time to sit back up."),
+        2: ("Still slouching", "You're still out of your goal posture."),
+        3: ("Time for a break", "You've been slouching for a while. Stand up and move."),
+    },
+    "direct": {
+        1: ("Sit up.", "Slouching. Back straight, shoulders down."),
+        2: ("Sit up now.", "Still slouching. Reset your posture."),
+        3: ("Break.", "Stand up and walk. Now."),
+    },
 }
+MESSAGES = MESSAGES_BY_TONE["gentle"]  # kept for callers that don't care about tone
 
 
-def _message(level: int) -> tuple[str, str]:
-    return MESSAGES.get(level) or MESSAGES[max(MESSAGES)]
+def _message(level: int, tone: str = "gentle") -> tuple[str, str]:
+    table = MESSAGES_BY_TONE.get(tone) or MESSAGES_BY_TONE["gentle"]
+    return table.get(level) or table[max(table)]
 
 
 def _send_phone(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
@@ -58,7 +73,7 @@ def _send_desktop(store: Any, user_id: str, title: str, body: str) -> dict[str, 
 def send_alert(store: Any, user: dict[str, Any], level: int) -> dict[str, Any]:
     """Send the nudge to every channel enabled in the user's settings."""
     channels = ((user.get("settings") or {}).get("alertChannels")) or {"phone": True, "desktop": True}
-    title, body = _message(level)
+    title, body = _message(level, (user.get("settings") or {}).get("nudgeTone", "gentle"))
     out: dict[str, Any] = {"level": level, "channels": {}}
     if channels.get("phone", True):
         out["channels"]["phone"] = _send_phone(store, user["id"], title, body)

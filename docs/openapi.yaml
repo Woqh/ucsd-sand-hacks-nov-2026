@@ -80,6 +80,13 @@ components:
             start: { type: string, example: "22:00" }
             end: { type: string, example: "07:00" }
         tzOffsetMin: { type: integer, minimum: -840, maximum: 840, description: "Minutes east of UTC; used for quiet hours and local-day bucketing" }
+        nudgeTone: { type: string, enum: [gentle, neutral, direct], default: gentle, description: "Wording of the nudge notifications" }
+        focus:
+          type: object
+          description: "Focus mode. With onlyDuringFocus on, nudges fire only while a session started with POST /focus is running (untilMs is in the future). Posture is tracked either way."
+          properties:
+            onlyDuringFocus: { type: boolean, default: false }
+            untilMs: { type: integer, format: int64, default: 0, description: "End of the running focus session (epoch ms, server clock); 0 = none. Set via POST /focus, not PUT." }
     ChannelResult:
       type: object
       properties:
@@ -285,6 +292,79 @@ paths:
         - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 } }
       responses:
         "200": { description: "{kind: sitwise-weekly-export, generated, weeks: [{weekStart, seatedMinutes, goodPct, slouchPct, slouchEpisodes}], checkins: [{weekStart, pain, area}], note}" }
+  /focus:
+    post:
+      summary: Start (1-240 minutes) or stop (0) a focus session. The end time is set from server time
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [minutes], properties: { minutes: { type: integer, minimum: 0, maximum: 240 } } } } }
+      responses:
+        "200": { description: "{settings, focusUntilMs}" }
+        "400": { description: invalid_focus }
+  /segments:
+    get:
+      summary: Raw posture segments for the last N days as [startMs, endMs, code] (G good, D drifting, S slouching, A away). The dashboard overlays a calendar file on them locally; the calendar never reaches the server
+      security: [{ dashboardToken: [] }]
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 30, default: 14 } }
+      responses:
+        "200": { description: "{since, until, segments: [[startMs, endMs, G|D|S|A]]}" }
+        "400": { description: bad_request }
+  /coach/insights:
+    get:
+      summary: The personal coaching pack, computed from the user's own last 42 days with no AI and no identifiers (fatigue curve, how they slouch, response to nudges, habit strength, breaks, setup hints, exercises, suggested settings changes) plus the exercise library and whether Gemini is configured
+      security: [{ dashboardToken: [] }]
+      parameters:
+        - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: "{pack: CoachPack, library: Exercise[] (with steps and safety note), ai: {configured, model|null}}. See web/src/types.ts CoachPack" }
+  /coach/preview:
+    get:
+      summary: Exactly what would be sent to Gemini (the de-identified pack, no exercise steps), plus the plain-language disclosure. Sends nothing
+      security: [{ dashboardToken: [] }]
+      parameters:
+        - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: "{payload, bytes, disclosure: string[], ai: {configured, model|null}}" }
+  /coach/analyze:
+    post:
+      summary: >
+        Build the coaching profile with Gemini from the de-identified pack. Needs consent: true in the body.
+        The result is returned to the browser and is NOT stored on the server (the profile lives only in the browser).
+        Never includes pain check-ins, identifiers, dates or images. Rate limited per user.
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [consent], properties: { consent: { type: boolean, enum: [true] } } } } }
+      responses:
+        "200": { description: "{analysis: Analysis, model, sent: <the exact payload>}" }
+        "400": { description: consent_required }
+        "429": { description: rate_limited }
+        "502": { description: "ai_bad_output | ai_unavailable (generic message, no provider detail)" }
+        "503": { description: ai_not_configured (GEMINI_API_KEY unset) }
+  /coach/ask:
+    post:
+      summary: Ask a free-text question about the user's own habits; answered from the de-identified pack and the cited evidence only. Needs consent=true. Nothing stored
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [question, consent], properties: { question: { type: string, minLength: 3, maxLength: 300 }, consent: { type: boolean, enum: [true] } } } } }
+      responses:
+        "200": { description: "{answer, basedOn: string[], outOfScope}" }
+        "400": { description: "bad_request | consent_required" }
+        "429": { description: rate_limited }
+        "502": { description: "ai_bad_output | ai_unavailable" }
+        "503": { description: ai_not_configured }
+  /coach/settings-from-text:
+    post:
+      summary: Turn a sentence about the user's day into a PROPOSED settings change, validated with the same code as PUT /settings. Never applied here; the dashboard shows the diff and the user confirms with PUT /settings. Sends the sentence and the current nudge settings only (no posture data). Needs consent=true
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [text, consent], properties: { text: { type: string, minLength: 3, maxLength: 400 }, consent: { type: boolean, enum: [true] } } } } }
+      responses:
+        "200": { description: "{explanation, patch, changes: [{field, from, to}]}" }
+        "400": { description: "bad_request | consent_required" }
+        "429": { description: rate_limited }
+        "502": { description: "ai_bad_output | ai_unavailable" }
+        "503": { description: ai_not_configured }
   /push/web/public-key:
     get:
       summary: VAPID public key for the browser (public by design)
@@ -315,7 +395,7 @@ paths:
       summary: Seed fake history (404 unless ENABLE_DEV_ROUTES=1). No token = create a new demo user.
       requestBody:
         content: { application/json: { schema: { type: object, properties: { days: { type: integer, default: 14, maximum: 90 }, tzOffsetMin: { type: integer }, reset: { type: boolean, default: true }, seed: { type: integer } } } } }
-      responses: { "200": { description: "{events, days, checkins, dashboardToken?, pairingCode?} (also seeds one demo pain check-in per week of history)" } }
+      responses: { "200": { description: "{events, samples, days, checkins, dashboardToken?, pairingCode?} (also seeds one demo pain check-in per week of history, downsampled readings with features, and an aged calibration)" } }
   /model/analyze:
     post:
       summary: "STUB: server-side fallback classification. ?force=slouch returns SLOUCHING"

@@ -18,7 +18,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "cooldownSec": 120,
     "quietHours": {"enabled": False, "start": "22:00", "end": "07:00"},
     "tzOffsetMin": 0,
+    "nudgeTone": "gentle",
+    "focus": {"onlyDuringFocus": False, "untilMs": 0},
 }
+
+TONES = ("gentle", "neutral", "direct")
 
 _HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -62,6 +66,29 @@ def merge_settings(current: Optional[dict[str, Any]], patch: dict[str, Any]) -> 
                         out["alertChannels"][k] = ch[k]
                     else:
                         errors.append(f"alertChannels.{k} must be a boolean")
+
+    if "nudgeTone" in patch:
+        if patch["nudgeTone"] in TONES:
+            out["nudgeTone"] = patch["nudgeTone"]
+        else:
+            errors.append(f"nudgeTone must be one of {', '.join(TONES)}")
+
+    if "focus" in patch:
+        fc = patch["focus"]
+        if not isinstance(fc, dict):
+            errors.append("focus must be an object")
+        else:
+            if "onlyDuringFocus" in fc:
+                if isinstance(fc["onlyDuringFocus"], bool):
+                    out["focus"]["onlyDuringFocus"] = fc["onlyDuringFocus"]
+                else:
+                    errors.append("focus.onlyDuringFocus must be a boolean")
+            if "untilMs" in fc:
+                n = _num(fc["untilMs"])
+                if n is None or not (0 <= n <= 4_102_444_800_000):
+                    errors.append("focus.untilMs must be epoch milliseconds (or 0)")
+                else:
+                    out["focus"]["untilMs"] = int(n)
 
     if "quietHours" in patch:
         qh = patch["quietHours"]
@@ -111,6 +138,8 @@ def config_from_settings(settings: Optional[dict[str, Any]]) -> Config:
         quiet_start_min=_minutes(qh["start"]),
         quiet_end_min=_minutes(qh["end"]),
         tz_offset_min=int(s["tzOffsetMin"]),
+        focus_only=bool(s["focus"]["onlyDuringFocus"]),
+        focus_until_ms=int(s["focus"]["untilMs"]),
     )
 
 

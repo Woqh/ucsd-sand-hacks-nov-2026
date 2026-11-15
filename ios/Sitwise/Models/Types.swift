@@ -53,6 +53,11 @@ struct QuietHours: Codable, Equatable {
     var end: String
 }
 
+struct FocusSettings: Codable, Equatable {
+    var onlyDuringFocus: Bool
+    var untilMs: Int64           // end of the running focus session (server clock); 0 = none. Started from the dashboard.
+}
+
 struct AppSettings: Codable, Equatable {
     var schema: Int = 1
     var slouchThresholdSec: Int
@@ -61,6 +66,9 @@ struct AppSettings: Codable, Equatable {
     var cooldownSec: Int
     var quietHours: QuietHours
     var tzOffsetMin: Int
+    /// "gentle" | "neutral" | "direct": wording of the nudge notifications. Optional so an older server still decodes.
+    var nudgeTone: String? = nil
+    var focus: FocusSettings? = nil
 }
 
 // MARK: - Responses

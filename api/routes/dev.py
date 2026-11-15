@@ -47,8 +47,15 @@ def seed():
     events = seedgen.generate(days, util.now_ms(), tz, seed=int(body.get("seed", 7)))
     rows = [{**e, "user_id": user["id"]} for e in events]
     store.insert_events(rows)
+    samples = seedgen.samples_from_events(events, seed=int(body.get("seed", 7)))   # one reading per minute
+    store.insert_samples([{**s, "user_id": user["id"]} for s in samples])
+    # an older goal posture, so calibration history (and the "recalibrate?" nudge) has something to show
+    cal = {"schema": util.SCHEMA, "goal": {"neckAngle": 15.0, "torsoAngle": 5.0, "headForwardOffset": 0.18},
+           "tolerance": 6.0, "capturedAt": util.now_ms() - 50 * 86_400_000}
+    store.update_user(user["id"], {"calibration": cal})
+    store.add_calibration(user["id"], cal["capturedAt"], cal)
     # demo pain check-ins (one per week of history) so the "pain vs slouching" view has something to show
     checkins = seedgen.checkins_from_events(events, util.now_ms(), seed=int(body.get("seed", 7)))
     for c in checkins:
         store.add_checkin(user["id"], c["t"], c["pain"], c["area"])
-    return {"schema": util.SCHEMA, "events": len(rows), "days": days, "checkins": len(checkins), **extra}
+    return {"schema": util.SCHEMA, "events": len(rows), "samples": len(samples), "days": days, "checkins": len(checkins), **extra}

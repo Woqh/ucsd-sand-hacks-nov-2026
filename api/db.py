@@ -24,6 +24,8 @@ SESSION_COLS = "id, user_id, started_at, last_t, last_seen_server_ms, state, las
 EVENT_COLS = "id, user_id, session_id, t, kind, from_state, to_state, alert, level, reason, deviation"
 SUB_COLS = "id, user_id, kind, endpoint, data"
 CHECKIN_COLS = "id, user_id, t, pain, area"
+SAMPLE_COLS = "t, session_id, state, label, deviation, confidence, neck, torso, head_fwd"
+_SAMPLE_INSERT_CHUNK = 500  # 500 x 11 params
 _USER_UPDATABLE = {"settings", "calibration", "device_token_hash", "pairing_code", "pairing_expires_at"}
 _JSON_COLS = {"settings", "calibration"}
 _EVENT_INSERT_CHUNK = 200  # rows per INSERT (200 x 11 params, far under Postgres' 65535 limit)
@@ -170,7 +172,46 @@ class PostgresStore:
                 conn.execute("delete from events where user_id = %s", (user_id,))
                 conn.execute("delete from sessions where user_id = %s", (user_id,))
                 conn.execute("delete from checkins where user_id = %s", (user_id,))
+                conn.execute("delete from samples where user_id = %s", (user_id,))
         self._run(go)
+
+    # ---- samples (the second hypertable): HOW someone sat, not just when the state changed
+    def insert_samples(self, rows: list[dict]) -> None:
+        for i in range(0, len(rows), _SAMPLE_INSERT_CHUNK):
+            chunk = rows[i:i + _SAMPLE_INSERT_CHUNK]
+            params: list[Any] = []
+            for r in chunk:
+                params += [r["user_id"], _ts(r["t"]), r["t"], r.get("session_id"), r.get("state"), r.get("label"),
+                           r.get("deviation"), r.get("confidence"), r.get("neck"), r.get("torso"), r.get("head_fwd")]
+            placeholders = ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(chunk))
+            self._exec("insert into samples (user_id, ts, t, session_id, state, label, deviation, confidence, "
+                       "neck, torso, head_fwd) values " + placeholders, tuple(params), retry=False)
+
+    def list_samples(self, user_id: str, since: int, until: int, limit: int = 50_000) -> list[dict]:
+        return self._all(f"select {SAMPLE_COLS} from samples where user_id = %s and ts >= %s and ts < %s "
+                         f"order by t limit %s", (user_id, _ts(since), _ts(until), int(limit)))
+
+    def sample_rollup(self, user_id: str, since: int, until: int) -> list[dict]:
+        """Hourly averages per state: [{hour (epoch ms, UTC hour), state, n, avg_dev, avg_neck, avg_torso,
+        avg_head_fwd}]. Plain SQL over `samples` so it behaves the same everywhere; the hypertable's time
+        filter lets TimescaleDB skip chunks. (The `samples_hourly` continuous aggregate maintained by the
+        schema is for dashboards/BI; the app does not read it yet.)"""
+        return self._all(
+            "select (extract(epoch from date_trunc('hour', ts at time zone 'UTC')) * 1000)::bigint as hour, "
+            "state, count(*)::int as n, avg(deviation) as avg_dev, avg(neck) as avg_neck, "
+            "avg(torso) as avg_torso, avg(head_fwd) as avg_head_fwd "
+            "from samples where user_id = %s and ts >= %s and ts < %s group by 1, state order by 1, state",
+            (user_id, _ts(since), _ts(until)))
+
+    # ---- calibration history
+    def add_calibration(self, user_id: str, t: int, baseline: dict) -> None:
+        from psycopg.types.json import Jsonb
+        self._exec("insert into calibrations (user_id, t, baseline) values (%s, %s, %s)", (user_id, t, Jsonb(baseline)))
+
+    def list_calibrations(self, user_id: str, limit: int = 20) -> list[dict]:
+        """Newest first: [{t, baseline}]."""
+        return self._all("select t, baseline from calibrations where user_id = %s order by t desc, id desc limit %s",
+                         (user_id, int(limit)))
 
     # ---- pain check-ins
     def add_checkin(self, user_id: str, t: int, pain: int, area: Optional[str]) -> dict:

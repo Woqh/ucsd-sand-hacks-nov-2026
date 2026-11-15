@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { EnableAlertsBanner } from '../components/AlertWatcher'
 import { Banner, Card, CardTitle, Meter, Stat, STATE_META, StateIcon, cx } from '../components/ui'
 import { formatAgo, formatDuration, formatMinutes, pct } from '../format'
 import { usePoll } from '../hooks'
@@ -21,6 +22,7 @@ export default function Live() {
   return (
     <div className="space-y-4">
       {error && <Banner tone="warn">Connection hiccup: {error.message}. Retrying…</Banner>}
+      <EnableAlertsBanner />
       {!s.paired && (
         <Banner tone="info">
           No phone is paired yet. <Link className="font-medium underline" to="/pair">Pair your phone</Link>, or load demo data from there.

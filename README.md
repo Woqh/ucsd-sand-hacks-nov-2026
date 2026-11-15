@@ -1,4 +1,4 @@
-# Sitwise (working name)
+# Sitwise
 
 A posture **coach**: an iPhone on your chair watches from the side, a model on the phone classifies
 your posture, and the system nudges you in real time and coaches you over weeks. UCSD SanD Hacks,
@@ -134,17 +134,6 @@ Running the tests against Postgres: start a **local** database and run `TEST_DAT
 
 Works on `http://localhost` and on HTTPS (Chrome, Edge, Firefox). If the page says the server has no VAPID key, step 1 didn't take effect (check `.env` and restart).
 
-### Add a second iPhone as an alert receiver
-
-The additional iPhone can receive phone-channel alerts over Wi-Fi/internet without replacing the posture-sensing phone. Configure the VAPID keys from the Desktop notifications section above, deploy the dashboard over HTTPS, and:
-
-1. On the dashboard, open **Settings → Connect another iPhone → Generate phone setup code**.
-2. On the receiver iPhone (iOS 16.4+), open the displayed receiver link in Safari, use **Share → Add to Home Screen**, then launch Sitwise from its Home Screen icon.
-3. Enter the one-time code on the receiver page and tap **Enable alerts on this phone**. Allow notifications.
-4. On the dashboard, use **Test phone alert**. The phone-alert setting controls both the paired iPhone and receiver phones.
-
-The receiver gets only permission to register or remove its own notification subscription, not dashboard access. iOS notification settings control whether/how alerts vibrate. This receiver uses Wi-Fi/internet push; it does not use Bluetooth. Disconnect it from the receiver page when no longer needed.
-
 ### iPhone app and push (APNs)
 
 Needs a Mac with Xcode, a **physical iPhone** (the camera), and a paid **Apple Developer** account (push). The app is written but **not yet built**; expect small compile fixes (see [`ios/README.md`](ios/README.md) for the build steps).
@@ -189,9 +178,13 @@ In short:
 4. Choose **which way you face** (Left or Right) on the page, then **Send readings to the dashboard**: the tab acts as
    the phone, so the readings go through the model into the database and Live, alerts, analytics and Coach run off
    them. Allow data collection before sending readings. The camera uses the upright reference and replaces any paired sensor.
+3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`. That file is a
+   **placeholder** today (it returns `UNKNOWN`); the PyTorch model goes there.
+4. **Send readings to the dashboard** makes the tab act as the phone, so Live, alerts and analytics
+   run off the feed. It replaces any paired phone.
 
 Frames go from the browser tab to the model server on the same computer, are analysed in memory and
-dropped; the hosted API still accepts no images. Only numbers reach the database.
+dropped; the hosted API still accepts no images.
 
 ## Simulate the phone
 

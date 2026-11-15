@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { api, tzOffsetMin } from '../api'
 import type { Settings } from '../types'
+import { AlertWatcher } from './AlertWatcher'
 import { cx } from './ui'
 
 const icon = (d: ReactNode) => (
@@ -57,6 +58,8 @@ export default function Layout({ signedIn }: { signedIn: boolean }) {
           </nav>
         </div>
       </header>
+
+      {signedIn && <AlertWatcher />}
 
       <main className="mx-auto max-w-5xl px-4 pb-28 pt-5 sm:pb-10">
         <Outlet />

@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import DataConsent from '../components/DataConsent'
 import { api, tzOffsetMin } from '../api'
 import { clearToken } from '../auth'
+import { useLocalAlerts } from '../components/AlertWatcher'
 import NudgeStyleCard from '../components/coach/NudgeStyle'
 import { Banner, Button, Card, CardTitle, Toggle } from '../components/ui'
 import { formatDuration } from '../format'
 import { usePoll } from '../hooks'
+import { showAlert } from '../alerts'
 import { enableDesktopPush, getPushState, type PushState } from '../push'
 import type { ChannelResult, Settings } from '../types'
 
@@ -111,6 +113,7 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <Row title="Phone" sub="Paired iPhone and any connected phone receivers" right={<Toggle label="Phone alerts" checked={s.alertChannels.phone} onChange={(v) => change({ alertChannels: { phone: v } })} />} />
           <Row title="This computer" sub="Browser notification" right={<Toggle label="Desktop alerts" checked={s.alertChannels.desktop} onChange={(v) => change({ alertChannels: { desktop: v } })} />} />
+          <LocalAlerts />
           <DesktopPush />
           <TestButtons />
           <ReceiverPhone />
@@ -171,6 +174,44 @@ function Slider({ label, help, value, min, max, step, display, onChange }: { lab
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 h-8 w-full" />
       <span className="text-sm text-ink-2">{help}</span>
     </label>
+  )
+}
+
+/** A notification the dashboard shows by itself while this tab is open: no push keys needed. */
+function LocalAlerts() {
+  const { state, enable, disable } = useLocalAlerts()
+  const [msg, setMsg] = useState<string | null>(null)
+
+  async function toggle(on: boolean) {
+    setMsg(null)
+    if (!on) return disable()
+    try {
+      await enable()
+    } catch (e) {
+      setMsg((e as Error).message)
+    }
+  }
+
+  if (state === 'unsupported') {
+    return <div className="rounded-xl bg-line/40 p-3 text-sm text-ink-2">This browser can't show notifications from a web page (iPhone Safari tabs can't). Use a desktop browser, or the receiver iPhone below.</div>
+  }
+  return (
+    <div className="rounded-xl bg-line/40 p-3">
+      <Row
+        title="Notify me in this tab"
+        sub="A pop-up the moment a nudge is sent while this dashboard is open. No push keys needed. Closed tabs need the push option below."
+        right={<Toggle label="Notify me in this tab" checked={state === 'on'} onChange={(v) => void toggle(v)} />}
+      />
+      {state === 'denied' && <p className="mt-2 text-sm text-ink-2">Notifications are blocked for this site. Allow them in your browser's site settings, then turn this on.</p>}
+      {state === 'on' && (
+        <div className="mt-3">
+          <Button variant="secondary" onClick={() => void showAlert('Test alert', 'This is what a posture nudge looks like.')}>
+            Show a test notification
+          </Button>
+        </div>
+      )}
+      {msg && <div className="mt-2 text-sm text-crit">{msg}</div>}
+    </div>
   )
 }
 

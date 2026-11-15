@@ -1,0 +1,274 @@
+"""End-to-end API tests against the in-memory store with a fake clock."""
+import uuid
+
+import pytest
+
+from api import util
+from api.app import create_app
+from api.db_memory import MemoryStore
+
+T0 = 1_731_672_000_000  # 2024-11-15 12:00:00 UTC
+SID = str(uuid.uuid4())
+
+
+@pytest.fixture
+def env(monkeypatch):
+    clock = {"t": T0}
+    monkeypatch.setattr(util, "now_ms", lambda: clock["t"])
+    monkeypatch.setenv("ENABLE_DEV_ROUTES", "1")
+    for k in ("APNS_KEY_ID", "APNS_AUTH_KEY", "VAPID_PRIVATE_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    store = MemoryStore()
+    client = create_app(store).test_client()
+    return client, clock, store
+
+
+def auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def paired(client):
+    r = client.post("/api/pair/create").get_json()
+    dash = r["dashboardToken"]
+    dev = client.post("/api/pair/claim", json={"code": r["pairingCode"].lower()}).get_json()["deviceToken"]
+    return dash, dev
+
+
+def sample(clock, label="GOOD", dev=0.1, sid=SID, **extra):
+    return {"schema": 1, "sessionId": sid, "t": clock["t"], "label": label, "deviation": dev,
+            "confidence": 0.95, "features": {"neckAngle": 15.0}, **extra}
+
+
+def feed(client, token, clock, seconds, label, dev):
+    last = None
+    for _ in range(seconds):
+        clock["t"] += 1000
+        last = client.post("/api/posture/ingest", json=sample(clock, label, dev), headers=auth(token))
+        assert last.status_code == 200, last.get_json()
+    return last.get_json()
+
+
+def test_pairing_flow_and_token_rules(env):
+    client, clock, store = env
+    r = client.post("/api/pair/create").get_json()
+    assert len(r["pairingCode"]) == 6 and r["dashboardToken"]
+    # tokens are stored hashed, never raw
+    assert all(r["dashboardToken"] not in str(u) for u in store.users.values())
+
+    claim = client.post("/api/pair/claim", json={"code": r["pairingCode"]})
+    assert claim.status_code == 200
+    assert client.post("/api/pair/claim", json={"code": r["pairingCode"]}).status_code == 404  # one-time
+    assert client.post("/api/pair/claim", json={}).status_code == 400
+
+    dash = r["dashboardToken"]
+    again = client.post("/api/pair/create", headers=auth(dash)).get_json()
+    assert "dashboardToken" not in again and again["pairingCode"] != r["pairingCode"]
+
+    st = client.get("/api/status", headers=auth(dash)).get_json()
+    assert st["paired"] is True and st["state"] == "AWAY" and st["stale"] is True
+
+
+def test_expired_pairing_code(env):
+    client, clock, _ = env
+    r = client.post("/api/pair/create").get_json()
+    clock["t"] += 11 * 60 * 1000
+    assert client.post("/api/pair/claim", json={"code": r["pairingCode"]}).status_code == 404
+
+
+def test_every_other_route_requires_the_right_token(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    assert client.get("/api/status").status_code == 401
+    assert client.get("/api/status", headers=auth("x" * 30)).status_code == 401
+    assert client.get("/api/status", headers=auth(dev)).status_code == 401          # device can't read status
+    assert client.post("/api/posture/ingest", json=sample(clock), headers=auth(dash)).status_code == 401
+    assert client.get("/api/settings", headers=auth(dev)).status_code == 200        # both can
+    assert client.get("/api/model/health", headers=auth(dash)).status_code == 200
+    assert client.get("/api/model/health").status_code == 401
+    assert client.get("/api/health").status_code == 200                              # documented exception
+
+
+def test_ingest_validates_input(env):
+    client, clock, _ = env
+    _, dev = paired(client)
+    bad = client.post("/api/posture/ingest", json={"sessionId": "nope"}, headers=auth(dev))
+    assert bad.status_code == 400 and bad.get_json()["error"]["code"] == "bad_sample"
+    skew = sample(clock)
+    skew["t"] -= 2 * 3600 * 1000
+    assert client.post("/api/posture/ingest", json=skew, headers=auth(dev)).get_json()["error"]["code"] == "clock_skew"
+
+
+def test_slouch_fires_alert_then_recovers_and_status_tracks_it(env):
+    client, clock, store = env
+    dash, dev = paired(client)
+    assert client.put("/api/settings", json={"slouchThresholdSec": 5}, headers=auth(dash)).status_code == 200
+
+    r = feed(client, dev, clock, 3, "GOOD", 0.1)
+    assert r["state"] == "GOOD" and r["alert"] is None
+
+    r = feed(client, dev, clock, 4, "SLOUCHING", 0.8)
+    assert r["state"] == "DEVIATING" and r["alert"] is None
+    r = feed(client, dev, clock, 3, "SLOUCHING", 0.8)
+    # the alert fired on one of those samples; with no push provider configured it reports skipped
+    st = client.get("/api/status", headers=auth(dash)).get_json()
+    assert st["state"] == "SLOUCHING" and st["stale"] is False and st["device"]["online"] is True
+    assert st["sample"]["label"] == "SLOUCHING"
+    alerts = [e for e in store.events if e["alert"]]
+    assert len(alerts) == 1 and alerts[0]["to_state"] == "SLOUCHING" and alerts[0]["level"] == 1
+
+    r = feed(client, dev, clock, 5, "GOOD", 0.1)
+    assert r["state"] == "GOOD"
+    st = client.get("/api/status", headers=auth(dash)).get_json()
+    assert st["state"] == "GOOD" and st["today"]["slouchEvents"] == 1
+    assert st["today"]["score"] is not None
+
+
+def test_alert_response_reports_channels_skipped_when_not_configured(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    client.put("/api/settings", json={"slouchThresholdSec": 5}, headers=auth(dash))
+    client.post("/api/push/apns/register", json={"token": "ab" * 32, "sandbox": True}, headers=auth(dev))
+    feed(client, dev, clock, 2, "GOOD", 0.1)
+    alert = None
+    for _ in range(8):
+        r = feed(client, dev, clock, 1, "SLOUCHING", 0.8)
+        alert = alert or r["alert"]
+    assert alert["level"] == 1
+    assert alert["channels"]["phone"]["skipped"] == "apns_not_configured"
+    assert alert["channels"]["desktop"]["skipped"] == "no_browser_subscribed"
+
+
+def test_channels_can_be_turned_off(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    client.put("/api/settings", json={"slouchThresholdSec": 5, "alertChannels": {"phone": False, "desktop": False}},
+               headers=auth(dash))
+    feed(client, dev, clock, 2, "GOOD", 0.1)
+    for _ in range(8):
+        r = feed(client, dev, clock, 1, "SLOUCHING", 0.8)
+        assert r["alert"] is None
+
+
+def test_stale_session_reads_as_away(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    feed(client, dev, clock, 3, "GOOD", 0.1)
+    assert client.get("/api/status", headers=auth(dash)).get_json()["state"] == "GOOD"
+    clock["t"] += 16_000   # phone went quiet
+    st = client.get("/api/status", headers=auth(dash)).get_json()
+    assert st["state"] == "AWAY" and st["stale"] is True and st["rawState"] == "GOOD"
+
+
+def test_new_session_closes_the_previous_one(env):
+    client, clock, store = env
+    dash, dev = paired(client)
+    feed(client, dev, clock, 3, "GOOD", 0.1)
+    clock["t"] += 60_000
+    new_sid = str(uuid.uuid4())
+    client.post("/api/posture/ingest", json=sample(clock, sid=new_sid), headers=auth(dev))
+    closes = [e for e in store.events if e["reason"] == "session_replaced"]
+    assert len(closes) == 1 and closes[0]["to_state"] == "AWAY"
+
+
+def test_session_cannot_be_hijacked_by_another_user(env):
+    client, clock, _ = env
+    _, dev1 = paired(client)
+    _, dev2 = paired(client)
+    client.post("/api/posture/ingest", json=sample(clock), headers=auth(dev1))
+    r = client.post("/api/posture/ingest", json=sample(clock), headers=auth(dev2))
+    assert r.status_code == 403
+
+
+def test_settings_roundtrip_and_validation(env):
+    client, _, _ = env
+    dash, dev = paired(client)
+    s = client.get("/api/settings", headers=auth(dash)).get_json()["settings"]
+    assert s["slouchThresholdSec"] == 30
+    r = client.put("/api/settings", json={"sensitivity": 0.8, "quietHours": {"enabled": True}}, headers=auth(dev))
+    assert r.status_code == 200
+    s = client.get("/api/settings", headers=auth(dash)).get_json()["settings"]
+    assert s["sensitivity"] == 0.8 and s["quietHours"] == {"enabled": True, "start": "22:00", "end": "07:00"}
+    bad = client.put("/api/settings", json={"slouchThresholdSec": 1}, headers=auth(dash))
+    assert bad.status_code == 400 and bad.get_json()["error"]["code"] == "invalid_settings"
+
+
+def test_calibration_roundtrip(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    assert client.get("/api/calibration", headers=auth(dash)).get_json()["calibrated"] is False
+    baseline = {"schema": 1, "goal": {"neckAngle": 15.0, "torsoAngle": 5.0}, "tolerance": 6.0, "capturedAt": clock["t"]}
+    assert client.put("/api/calibration", json=baseline, headers=auth(dev)).status_code == 200
+    got = client.get("/api/calibration", headers=auth(dash)).get_json()
+    assert got["calibrated"] and got["baseline"]["goal"]["neckAngle"] == 15.0
+    assert client.put("/api/calibration", json={**baseline, "tolerance": -1}, headers=auth(dash)).status_code == 400
+    assert client.get("/api/status", headers=auth(dash)).get_json()["calibrated"] is True
+
+
+def test_push_registration_validation(env):
+    client, _, store = env
+    dash, dev = paired(client)
+    assert client.post("/api/push/apns/register", json={"token": "zz"}, headers=auth(dev)).status_code == 400
+    assert client.post("/api/push/apns/register", json={"token": "AB" * 32}, headers=auth(dev)).status_code == 200
+    sub = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "k", "auth": "a"}}
+    assert client.post("/api/push/web/subscribe", json={"subscription": sub}, headers=auth(dash)).status_code == 200
+    assert client.post("/api/push/web/subscribe", json={"subscription": {"endpoint": "http://x"}}, headers=auth(dash)).status_code == 400
+    kinds = sorted(s["kind"] for s in store.subs)
+    assert kinds == ["apns", "web"]
+    t = client.post("/api/push/test", json={"channel": "desktop"}, headers=auth(dash)).get_json()
+    assert t["result"]["skipped"] == "vapid_not_configured"
+
+
+def test_model_stubs_return_fixed_mock_data(env):
+    client, _, _ = env
+    dash, _ = paired(client)
+    h = auth(dash)
+    good = client.post("/api/model/analyze", json={}, headers=h).get_json()
+    assert good["label"] == "GOOD" and good["stub"] is True
+    slouch = client.post("/api/model/analyze?force=slouch", json={}, headers=h).get_json()
+    assert slouch["label"] == "SLOUCHING" and slouch["deviation"] > 0.4
+    assert client.post("/api/model/calibrate/start", headers=h).get_json() == {"schema": 1, "status": "started", "stub": True}
+    fin = client.post("/api/model/calibrate/finish", headers=h).get_json()
+    assert fin["stub"] and set(fin["goal"]) == {"neckAngle", "torsoAngle", "headForwardOffset"}
+    assert client.get("/api/model/health", headers=h).get_json()["ready"] is True
+
+
+def test_seed_then_metrics(env):
+    client, clock, _ = env
+    r = client.post("/api/dev/seed", json={"days": 7, "tzOffsetMin": 0}).get_json()
+    assert r["events"] > 100 and r["dashboardToken"]
+    h = auth(r["dashboardToken"])
+
+    week = client.get("/api/metrics?range=week", headers=h).get_json()
+    assert len(week["daily"]) == 7
+    scores = [d["score"] for d in week["daily"] if d["score"] is not None]
+    assert len(scores) >= 5 and all(0 <= s <= 100 for s in scores)
+    assert scores[-1] > scores[0]                               # the seeded story: improving
+    s = week["summary"]
+    assert s["seatedSec"] > 3600 and s["slouchEvents"] > 0 and s["longestGoodStreakSec"] > 0
+    assert week["goal"]["targetPct"] % 5 == 0
+    assert week["outlook"]["status"] in ("on_track", "at_risk")
+    assert week["heatmap"] and {"day", "hour", "goodPct"} <= set(week["heatmap"][0])
+    assert week["timeline"] == []
+
+    day = client.get("/api/metrics?range=day", headers=h).get_json()
+    assert len(day["daily"]) == 1 and day["timeline"]
+    assert client.get("/api/metrics?range=year", headers=h).status_code == 400
+    assert client.get("/api/metrics?range=week&tzOffsetMin=x", headers=h).status_code == 400
+
+    # re-seeding an existing user replaces their history rather than doubling it
+    n1 = len(client.application.config["STORE"].events)
+    client.post("/api/dev/seed", json={"days": 7}, headers=h)
+    assert len(client.application.config["STORE"].events) == n1
+
+
+def test_dev_routes_are_off_by_default(env, monkeypatch):
+    client, _, _ = env
+    monkeypatch.delenv("ENABLE_DEV_ROUTES")
+    assert client.post("/api/dev/seed").status_code == 404
+    assert client.get("/api/health").get_json()["devRoutes"] is False
+
+
+def test_unknown_route_is_json_404(env):
+    client, _, _ = env
+    r = client.get("/api/nope")
+    assert r.status_code == 404 and r.get_json()["error"]["code"] == "not_found"

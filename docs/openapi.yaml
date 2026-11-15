@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: Sitwise API
+  version: "1"
+  description: >
+    Flask API on Vercel. All routes are under /api, JSON in and out, "schema": 1 in payloads.
+    Mirrors: web/src/types.ts and ios/Sitwise/Models/Types.swift. Human-readable notes: docs/api.md.
+    Model-owned routes (/model/*) are STUBS that return fixed mock data with "stub": true.
+servers:
+  - url: /api
+components:
+  securitySchemes:
+    dashboardToken: { type: http, scheme: bearer, description: "Browser token from POST /pair/create" }
+    deviceToken: { type: http, scheme: bearer, description: "Phone token from POST /pair/claim" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties: { code: { type: string }, message: { type: string } }
+    PostureState: { type: string, enum: [AWAY, GOOD, DEVIATING, SLOUCHING] }
+    Features:
+      type: object
+      description: Units and angle conventions are owned by the model; the server stores any numeric keys.
+      properties:
+        neckAngle: { type: number }
+        torsoAngle: { type: number }
+        headForwardOffset: { type: number }
+    PostureSample:
+      type: object
+      required: [sessionId, t, label]
+      properties:
+        schema: { type: integer, enum: [1] }
+        sessionId: { type: string, format: uuid, description: "New one per monitoring run" }
+        t: { type: integer, format: int64, description: "Epoch ms, phone clock. Rejected if >1h from server time" }
+        label: { type: string, enum: [GOOD, SLOUCHING, AWAY, UNKNOWN] }
+        deviation: { type: number, minimum: 0, nullable: true, description: "0 = goal posture; higher = worse. The server compares it with the USER's sensitivity" }
+        confidence: { type: number, minimum: 0, maximum: 1, default: 1, description: "Below 0.5 is ignored" }
+        features: { $ref: "#/components/schemas/Features" }
+    CalibrationBaseline:
+      type: object
+      required: [goal, tolerance, capturedAt]
+      properties:
+        schema: { type: integer, enum: [1] }
+        goal: { $ref: "#/components/schemas/Features" }
+        tolerance: { type: number, exclusiveMinimum: true, minimum: 0 }
+        capturedAt: { type: integer, format: int64 }
+        stub: { type: boolean }
+    Settings:
+      type: object
+      properties:
+        schema: { type: integer, enum: [1] }
+        slouchThresholdSec: { type: integer, minimum: 5, maximum: 900, default: 30 }
+        sensitivity: { type: number, minimum: 0, maximum: 1, default: 0.5 }
+        alertChannels:
+          type: object
+          properties: { phone: { type: boolean }, desktop: { type: boolean } }
+        cooldownSec: { type: integer, minimum: 15, maximum: 3600, default: 120 }
+        quietHours:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            start: { type: string, example: "22:00" }
+            end: { type: string, example: "07:00" }
+        tzOffsetMin: { type: integer, minimum: -840, maximum: 840, description: "Minutes east of UTC; used for quiet hours and local-day bucketing" }
+    ChannelResult:
+      type: object
+      properties:
+        sent: { type: integer }
+        failed: { type: integer }
+        skipped: { type: string, nullable: true, description: "e.g. no_device_registered, apns_not_configured, no_browser_subscribed, vapid_not_configured" }
+    IngestResponse:
+      type: object
+      properties:
+        schema: { type: integer }
+        state: { $ref: "#/components/schemas/PostureState" }
+        stateSince: { type: integer, format: int64, nullable: true }
+        serverTime: { type: integer, format: int64 }
+        alert:
+          nullable: true
+          type: object
+          properties:
+            level: { type: integer, description: "1 first nudge, 2-3 gentle escalations" }
+            channels: { type: object, additionalProperties: { $ref: "#/components/schemas/ChannelResult" } }
+    DaySummary:
+      type: object
+      properties:
+        score: { type: integer, nullable: true, minimum: 0, maximum: 100 }
+        goodPct: { type: number, nullable: true }
+        seatedSec: { type: integer }
+        goodSec: { type: integer }
+        graceSec: { type: integer }
+        slouchSec: { type: integer }
+        awaySec: { type: integer }
+        slouchEvents: { type: integer }
+        slouchEventsPerHour: { type: number, nullable: true }
+        longestGoodStreakSec: { type: integer }
+        avgRecoverySec: { type: number, nullable: true }
+        sittingSec: { type: integer, description: "Only on /status: time since the last break of 2+ minutes" }
+    Status:
+      type: object
+      properties:
+        schema: { type: integer }
+        paired: { type: boolean }
+        calibrated: { type: boolean }
+        serverTime: { type: integer, format: int64 }
+        thresholdSec: { type: number }
+        device:
+          type: object
+          properties:
+            lastSeenMs: { type: integer, nullable: true }
+            ageSec: { type: number, nullable: true }
+            online: { type: boolean }
+        state: { $ref: "#/components/schemas/PostureState" }
+        rawState: { $ref: "#/components/schemas/PostureState" }
+        stale: { type: boolean, description: "No sample for >15 s; state is reported as AWAY" }
+        timeInStateSec: { type: number }
+        deviatingForSec: { type: number, nullable: true }
+        inCooldown: { type: boolean }
+        alertsSent: { type: integer }
+        sample: { type: object, nullable: true }
+        today: { $ref: "#/components/schemas/DaySummary" }
+    Metrics:
+      type: object
+      properties:
+        schema: { type: integer }
+        range: { type: string, enum: [day, week, month] }
+        since: { type: integer }
+        until: { type: integer }
+        tzOffsetMin: { type: integer }
+        summary: { $ref: "#/components/schemas/DaySummary" }
+        previous:
+          type: object
+          properties: { score: { type: integer, nullable: true }, goodPct: { type: number, nullable: true }, seatedSec: { type: integer } }
+        daily:
+          type: array
+          items:
+            type: object
+            properties: { date: { type: string }, dayIndex: { type: integer }, seatedSec: { type: integer }, goodPct: { type: number, nullable: true }, score: { type: integer, nullable: true } }
+        heatmap:
+          type: array
+          description: Weekday x hour cells with data. day 0 = Monday.
+          items:
+            type: object
+            properties: { day: { type: integer }, hour: { type: integer }, seatedSec: { type: integer }, goodPct: { type: number, nullable: true } }
+        timeline:
+          type: array
+          description: Only for range=day.
+          items:
+            type: object
+            properties: { state: { $ref: "#/components/schemas/PostureState" }, start: { type: integer }, end: { type: integer } }
+        dayStreak: { type: integer }
+        goal:
+          type: object
+          properties: { previousPct: { type: number, nullable: true }, currentPct: { type: number, nullable: true }, targetPct: { type: integer } }
+        outlook:
+          type: object
+          properties: { status: { type: string, enum: [on_track, at_risk, no_data] }, thresholdPct: { type: integer } }
+        sittingSec: { type: integer }
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+paths:
+  /health:
+    get:
+      summary: Liveness + which store/dev routes are on (public; non-sensitive)
+      responses: { "200": { description: "{ok, devRoutes, store}" } }
+  /pair/create:
+    post:
+      summary: New anonymous user + dashboard token + pairing code. With a dashboard token, only issues a fresh code.
+      responses:
+        "200":
+          description: "{dashboardToken?, pairingCode, expiresAt} (code valid 10 min)"
+  /pair/claim:
+    post:
+      summary: Exchange the pairing code for a device token (one phone per user; replaces the old one)
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        "200": { description: "{deviceToken}" }
+        "404": { description: invalid_code }
+  /posture/ingest:
+    post:
+      summary: Receive a PostureSample, run the state machine, store events, fire alerts
+      security: [{ deviceToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/PostureSample" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/IngestResponse" } } } }
+        "400": { description: "bad_sample | clock_skew" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: sessionId belongs to another user }
+  /status:
+    get:
+      summary: Current state for the dashboard (poll ~2 s). Staleness is computed on read.
+      security: [{ dashboardToken: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+  /settings:
+    get:
+      summary: Read settings (defaults filled in)
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: "{settings}" } }
+    put:
+      summary: Partial update; unknown keys ignored; any invalid value rejects the whole patch (400 invalid_settings)
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/Settings" } } }
+      responses: { "200": { description: "{settings}" } }
+  /calibration:
+    get:
+      summary: Read the goal-posture baseline
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: "{calibrated, baseline|null}" } }
+    put:
+      summary: Store a baseline produced by the model
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/CalibrationBaseline" } } }
+      responses: { "200": { description: "{calibrated, baseline}" } }
+  /metrics:
+    get:
+      summary: Aggregates for analytics
+      security: [{ dashboardToken: [] }]
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month], default: day } }
+        - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 }, description: "-new Date().getTimezoneOffset()" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Metrics" } } } }
+  /push/web/public-key:
+    get:
+      summary: VAPID public key for the browser (public by design)
+      responses: { "200": { description: "{publicKey|null}" } }
+  /push/web/subscribe:
+    post:
+      summary: Save a Web Push subscription
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { subscription: { type: object } } } } }
+      responses: { "200": { description: "{ok}" } }
+  /push/apns/register:
+    post:
+      summary: Save the APNs device token (sandbox flag = dev build)
+      security: [{ deviceToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string }, sandbox: { type: boolean } } } } }
+      responses: { "200": { description: "{ok}" } }
+  /push/test:
+    post:
+      summary: Send a test notification to one channel
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [channel], properties: { channel: { type: string, enum: [phone, desktop] } } } } }
+      responses: { "200": { description: "{channel, result: ChannelResult}" } }
+  /dev/seed:
+    post:
+      summary: Seed fake history (404 unless ENABLE_DEV_ROUTES=1). No token = create a new demo user.
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { days: { type: integer, default: 14, maximum: 30 }, tzOffsetMin: { type: integer }, reset: { type: boolean, default: true }, seed: { type: integer } } } } }
+      responses: { "200": { description: "{events, days, dashboardToken?, pairingCode?}" } }
+  /model/analyze:
+    post:
+      summary: "STUB: server-side fallback classification. ?force=slouch returns SLOUCHING"
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: "A PostureSample-shaped body plus stub: true" } }
+  /model/calibrate/start:
+    post:
+      summary: "STUB: begin capturing goal posture"
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: '{"status":"started","stub":true}' } }
+  /model/calibrate/finish:
+    post:
+      summary: "STUB: finish calibration, returns a mock baseline"
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: "CalibrationBaseline plus stub: true" } }
+  /model/health:
+    get:
+      summary: "STUB: is the model service ready?"
+      security: [{ dashboardToken: [] }, { deviceToken: [] }]
+      responses: { "200": { description: '{"ready":true,"stub":true}' } }

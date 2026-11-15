@@ -1,0 +1,43 @@
+# XcodeGen spec: generates Sitwise.xcodeproj so the Xcode project isn't hand-merged in git.
+#   brew install xcodegen && cd ios && xcodegen generate && open Sitwise.xcodeproj
+# NOT yet built or run (written on Windows). Expect to fix small things on the first Mac build.
+#
+# OPEN QUESTION (CLAUDE.md): who adds the OpenCV Obj-C++ bridge (opencv2.xcframework + wrapper +
+# bridging header)? Agree before both people edit this project. Until then the app runs end to
+# end on StubPostureModel and does not link OpenCV.
+name: Sitwise
+options:
+  bundleIdPrefix: com.sitwise
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""            # your Apple Developer Team ID (needed for push + device builds)
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Sitwise:
+    type: application
+    platform: iOS
+    sources:
+      - Sitwise
+    settings:
+      base:
+        # Must equal APNS_BUNDLE_ID on the server.
+        PRODUCT_BUNDLE_IDENTIFIER: com.sitwise.app
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: Sitwise/Info.plist
+      properties:
+        CFBundleDisplayName: Sitwise
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: >-
+          Sitwise watches your sitting posture from the side. Video frames are analysed on this
+          phone and are never saved or uploaded; only numbers are sent.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true   # lets a dev build talk to Flask on your LAN (http://192.168.x.x:5001)
+    entitlements:
+      path: Sitwise/Sitwise.entitlements
+      properties:
+        aps-environment: development      # Xcode switches this to production for TestFlight/App Store

@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0
+# Lets the `flask` CLI load a local .env (not used by pytest or scripts/, and not needed on Vercel).
+python-dotenv>=1.0

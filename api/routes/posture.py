@@ -1,0 +1,92 @@
+"""POST /posture/ingest: the phone's ~1 Hz feed. Loads the session, runs the pure state machine,
+persists new state + events, fires alerts, returns the current state."""
+from __future__ import annotations
+
+from typing import Any
+
+from flask import Blueprint, g
+
+from api import util
+from api.auth import device_only
+from api.core.settings import SampleError, config_from_settings, parse_sample
+from api.core.state_machine import AWAY, MachineState, step
+from api.db import get_store
+from api.errors import ApiError
+from api.push import dispatch
+
+bp = Blueprint("posture", __name__)
+
+
+def _event_row(user_id: str, session_id: str, e: dict[str, Any]) -> dict[str, Any]:
+    return {"user_id": user_id, "session_id": session_id, "t": e["t"], "kind": e["kind"],
+            "from_state": e["from_state"], "to_state": e["to_state"], "alert": e["alert"],
+            "level": e["level"], "reason": e["reason"], "deviation": e["deviation"]}
+
+
+@bp.post("/posture/ingest")
+@device_only
+def ingest():
+    user = g.user
+    store = get_store()
+    try:
+        sid, sample, features = parse_sample(util.json_body())
+    except SampleError as exc:
+        raise ApiError(400, "bad_sample", str(exc))
+
+    now = util.now_ms()
+    if abs(sample.t - now) > util.MAX_CLOCK_SKEW_MS:
+        raise ApiError(400, "clock_skew", "Sample timestamp is more than 1 hour from server time; "
+                                          "check the phone's clock")
+
+    cfg = config_from_settings(user.get("settings"))
+    sess = store.get_session(sid)
+    rows: list[dict[str, Any]] = []
+
+    if sess is None:
+        # New session (app restarted, new sessionId). Close the previous one at the last time we
+        # saw it, otherwise its open state would stretch across the gap in analytics.
+        prev = store.latest_session(user["id"])
+        if prev:
+            pm = MachineState.from_dict(prev["state"])
+            if pm.state != AWAY:
+                end_t = pm.last_t or prev["last_t"]
+                rows.append({"user_id": user["id"], "session_id": prev["id"], "t": end_t,
+                             "kind": "transition", "from_state": pm.state, "to_state": AWAY,
+                             "alert": False, "level": 0, "reason": "session_replaced",
+                             "deviation": None})
+                prev["state"] = MachineState(state=AWAY, since=end_t, last_t=end_t).to_dict()
+                store.save_session(prev)
+        machine = MachineState()
+        started_at = sample.t
+        last_t = sample.t
+    else:
+        if sess["user_id"] != user["id"]:
+            raise ApiError(403, "forbidden", "sessionId belongs to another user")
+        machine = MachineState.from_dict(sess["state"])
+        started_at = sess["started_at"]
+        last_t = max(sess["last_t"], sample.t)
+
+    new_machine, events = step(machine, sample, cfg)
+    rows += [_event_row(user["id"], sid, e.to_dict()) for e in events]
+    if rows:
+        store.insert_events(rows)
+
+    store.save_session({
+        "id": sid, "user_id": user["id"], "started_at": started_at, "last_t": last_t,
+        "last_seen_server_ms": now, "state": new_machine.to_dict(),
+        "last_sample": {"t": sample.t, "label": sample.label, "deviation": sample.deviation,
+                        "confidence": sample.confidence, "features": features},
+    })
+
+    alert = None
+    for e in events:
+        if e.alert:
+            alert = dispatch.send_alert(store, user, e.level)  # push failures are reported, never raised
+
+    return {
+        "schema": util.SCHEMA,
+        "state": new_machine.state,
+        "stateSince": new_machine.since,
+        "serverTime": now,
+        "alert": alert,
+    }

@@ -1,0 +1,35 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# env / secrets  (never commit values)
+.env
+.env.*
+!.env.example
+*.p8
+
+# local dev database (memory store persists here when Supabase isn't configured)
+.devdb.json
+
+# web
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Vite builds the dashboard into /public for Vercel (generated, not committed)
+/public/
+
+# vercel
+.vercel/
+
+# ios
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# os / editor
+.DS_Store
+Thumbs.db

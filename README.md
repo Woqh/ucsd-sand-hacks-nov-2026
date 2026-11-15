@@ -1,0 +1,210 @@
+# Sitwise (working name)
+
+A posture **coach**: an iPhone on your chair watches from the side, a model on the phone classifies
+your posture, and the system nudges you in real time and coaches you over weeks. UCSD SanD Hacks,
+November 2026.
+
+What's here: the **interface** (iPhone app, web dashboard, API, database, push). The **model**
+(on-device OpenCV pose estimation and classification) is a teammate's and is **stubbed** behind a
+Swift protocol and `/api/model/*` endpoints that return fixed mock data.
+
+**Contents:** [Quick start](#quick-start-no-accounts-no-phone-needed) ·
+[Configure everything](#configure-everything) · [Simulate the phone](#simulate-the-phone) ·
+[Troubleshooting](#troubleshooting) · [Layout](#layout) · [Deploy](#deploy-vercel--supabase)
+
+## Quick start (no accounts, no phone needed)
+
+Needs Python 3.12+ and Node 20.19+ (or 22.12+; Vite 8 requires it). From the repo root:
+
+```bash
+# one-time
+python -m venv .venv                 # skip if .venv already exists
+.venv\Scripts\activate               # macOS/Linux: source .venv/bin/activate   PowerShell: .venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+cd web
+npm install
+cd ..
+copy .env.example .env               # macOS/Linux: cp .env.example .env   (skip if you already have a .env)
+```
+
+Then three terminals (activate the venv in each Python one):
+
+```bash
+# 1. API: in-memory store, saved to .devdb.json, so nothing external is needed
+flask --app api.index run --debug --port 5001
+
+# 2. dashboard on http://localhost:5173 (Vite proxies /api to port 5001)
+cd web
+npm run dev
+
+# 3. two weeks of demo data + a fake phone (see "Simulate the phone")
+python scripts/seed.py               # prints a login link and a pairing code
+python scripts/simulate.py --code <PAIRING_CODE> --loop
+```
+
+Open the link `seed.py` printed. Tests: `pytest api` (pure logic + end-to-end API).
+
+## Configure everything
+
+You only need this section to go beyond the quick start: a real database, desktop and iPhone
+notifications, or running the iPhone app.
+
+### How configuration works
+
+All server settings are environment variables. For local dev put them in a **`.env`** file in the
+repo root (copy [`.env.example`](.env.example); it's gitignored, never commit real values).
+
+- The **`flask` command** loads `.env` automatically (via `python-dotenv`, installed by
+  `requirements-dev.txt`). **Run it from the repo root and restart it after editing `.env`.**
+- `pytest` and the `scripts/` do **not** read `.env` (the scripts take flags or their own env vars).
+- No `.env`? You can set variables in the shell instead. Set it on its own line first:
+  bash `export ENABLE_DEV_ROUTES=1` · PowerShell `$env:ENABLE_DEV_ROUTES=1` · cmd.exe
+  `set "ENABLE_DEV_ROUTES=1"` (keep the quotes: without them cmd stores a trailing space, `"1 "`, and the flag stays off).
+- `.env` format: one `KEY=value` per line, no spaces around `=`.
+
+| Variable | Needed for | Notes |
+|---|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | A real database | Set **both** or neither. Neither = in-memory store. Server-only secret |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop notifications | `python scripts/gen_vapid.py` |
+| `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_AUTH_KEY`, `APNS_BUNDLE_ID`, `APNS_USE_SANDBOX` | iPhone notifications | From your Apple Developer account |
+| `ENABLE_DEV_ROUTES` | Demo seeding + the dashboard's "Load demo data" button | `1` to enable. Leave unset on anything public |
+| `DEV_DB_FILE` | Where the in-memory store saves | Optional. Default `.devdb.json` (delete it to reset local data) |
+
+Not in `.env` (set in the shell): `API_PROXY`, `VITE_BASE` (dashboard, see below) and
+`SITWISE_BASE`, `SITWISE_DEVICE_TOKEN` (simulator).
+
+**Check what the API is using:** `curl http://127.0.0.1:5001/api/health` returns
+`{"ok":true,"devRoutes":true,"store":"memory"}`. `store` is `memory` or `supabase`; `devRoutes` is
+whether `ENABLE_DEV_ROUTES` took effect.
+
+### Supabase (real database)
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Open the **SQL Editor**, paste all of [`api/schema.sql`](api/schema.sql) and run it. The Table Editor should now show `users`, `sessions`, `events`, `push_subscriptions`. (It turns Row Level Security on with no policies, so only the service key can read or write.)
+3. Copy two values: the **secret key** from **Settings → API Keys** (`sb_secret_…`; the legacy `service_role` key also works) and the **Project URL** from the **Connect** dialog (`https://<ref>.supabase.co`).
+4. Put them in `.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, restart Flask, and check `/api/health` says `"store":"supabase"`.
+
+The secret key is an admin key that bypasses all access rules. It lives only on the server (`.env` locally, Vercel env vars when deployed), never in the web app or the iPhone app. Rotate it in the same dashboard page if it leaks.
+Data from the in-memory store does **not** carry over: run `python scripts/seed.py` again, and re-pair (old dashboard tokens stop working and the browser signs itself out).
+
+### Desktop notifications (Web Push)
+
+1. `python scripts/gen_vapid.py` prints three lines. Paste them into `.env` and set `VAPID_SUBJECT` to a `mailto:` address you're happy to share with browser push services. Restart Flask.
+2. In the dashboard: **Settings → Enable on this computer** → allow the browser prompt → **Test desktop alert**. A notification should appear and the page says "Sent to 1 browser."
+
+Works on `http://localhost` and on HTTPS (Chrome, Edge, Firefox). If the page says the server has no VAPID key, step 1 didn't take effect (check `.env` and restart).
+
+### iPhone app and push (APNs)
+
+Needs a Mac with Xcode, a **physical iPhone** (the camera), and a paid **Apple Developer** account (push). The app is written but **not yet built**; expect small compile fixes (see [`ios/README.md`](ios/README.md) for the build steps).
+
+1. **APNs key:** in the Apple Developer portal go to **Certificates, Identifiers & Profiles → Keys**, create a key with **Apple Push Notifications service (APNs)** enabled, and download the `.p8` (Apple lets you download it once). Note the **Key ID**; your **Team ID** is under Membership. Never commit the `.p8` (it's gitignored).
+2. **Server `.env`:** set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID` (`com.sitwise.app` unless you changed it in `ios/project.yml`), and `APNS_USE_SANDBOX=1` for Xcode dev builds (`0` for TestFlight/App Store). `APNS_AUTH_KEY` is the `.p8` contents on **one line** with `\n` for newlines, in double quotes. Print it ready to paste:
+
+   ```
+   python -c "import sys; print(open(sys.argv[1]).read().strip().replace(chr(10), chr(92)+'n'))" AuthKey_XXXXXXXXXX.p8
+   ```
+3. **Point the app at your server:** edit `Config.baseURL` in [`ios/Sitwise/Config.swift`](ios/Sitwise/Config.swift). For local dev use your PC's LAN address, e.g. `http://192.168.1.20:5001` (`ipconfig` shows it); on a deployed app use the Vercel URL. The bundle ID in `ios/project.yml` must equal `APNS_BUNDLE_ID`.
+4. **Let the phone reach your PC:** start Flask with `--host 0.0.0.0` (`flask --app api.index run --host 0.0.0.0 --port 5001`; **drop `--debug`** there, because the debugger would be reachable from your network), put the phone on the same Wi-Fi, and allow inbound TCP 5001 in Windows Firewall when prompted.
+5. **Pair and test:** get a code from the dashboard's **Pair** page, enter it in the app, then **Settings → Test iPhone alert** in the dashboard. "Sent to 1 device." means it worked.
+
+Without any of this the app still runs end to end on the stub model; you just won't get real pushes.
+
+### Dashboard options
+
+Set these in the shell before `npm run dev` / `npm run build`:
+
+| Variable | Default | Use |
+|---|---|---|
+| `API_PROXY` | `http://127.0.0.1:5001` | Where Vite forwards `/api` if Flask runs elsewhere |
+| `VITE_BASE` | `/` | Serve the dashboard from a sub-path (it also becomes the router basename) |
+
+## Simulate the phone
+
+`scripts/simulate.py` acts as the iPhone. It claims a pairing code, then POSTs a posture sample every
+second (good → slouch → recover), the same payload the real app sends. It uses only the Python
+standard library. Use it to develop and demo the dashboard and alerts without a camera, a Mac or the
+real model, and as the demo fallback.
+
+1. **Start the API and the dashboard** (Quick start, terminals 1 and 2).
+2. **Get a pairing code.** Either open the dashboard, go to **Pair → Create my dashboard**, or run `python scripts/seed.py` (also fills two weeks of history and prints a login link). Codes last 10 minutes; **Pair → New code** makes another.
+3. **Make nudges quick (optional).** In **Settings**, drag **Slouch threshold** to 5–10 s so you don't wait 30 s.
+4. **Run the simulator** in a new terminal (venv active):
+
+   ```
+   python scripts/simulate.py --code ABC234 --good-for 10 --slouch-for 30 --loop
+   ```
+
+   You'll see the server's view of each sample:
+
+   ```
+   Paired. Reuse with:  SITWISE_DEVICE_TOKEN=...
+   [good  ] server state: GOOD
+   [slouch] server state: DEVIATING
+   [slouch] server state: SLOUCHING   ALERT level 1 {"desktop": {...}, "phone": {...}}
+   [good  ] server state: SLOUCHING
+   [good  ] server state: GOOD
+   ```
+5. **Watch the dashboard Live page:** Good → Drifting (with a "nudge in N s" meter) → Slouching ("1 nudge sent") → back to Good about 3 s after the simulator sits up. **Analytics** fills in as it runs. If desktop push is configured you also get the notification. The `ALERT` line shows per channel whether it was sent or skipped and why (e.g. `no_device_registered`, `vapid_not_configured`).
+
+**Options**
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--code CODE` | | Pairing code from the dashboard (first run). Prints a device token |
+| `--token T` / `SITWISE_DEVICE_TOKEN` | | Reuse a device token and skip pairing |
+| `--base URL` / `SITWISE_BASE` | `http://127.0.0.1:5001` | API to talk to; use `https://<project>.vercel.app` for a deployed one |
+| `--good-for` (alias `--slouch-after`) | 10 | Seconds of good posture at the start of each cycle |
+| `--slouch-for` | 40 | Seconds of slouching (must exceed your slouch threshold to trigger a nudge) |
+| `--recover-for` | 15 | Seconds of good posture after the slouch |
+| `--interval` | 1.0 | Seconds between samples (keep ~1; the server treats > 15 s of silence as "phone offline") |
+| `--loop` | off | Repeat the cycle until Ctrl-C |
+
+To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKEN=<token>"` then
+`python scripts/simulate.py --loop`; PowerShell: `$env:SITWISE_DEVICE_TOKEN="<token>"`; or pass `--token`.
+
+**Good to know**
+- One phone per account: pairing a new device (or a second `--code`) invalidates the old token; the old simulator then fails with "no longer paired".
+- Each run uses a fresh session ID, and starting one closes the previous session cleanly.
+- **Test going offline:** stop the simulator. After about 15 s the Live page shows the "phone hasn't reported" banner and `Away`.
+- The simulator can't test iPhone push (no APNs token); use the real app and **Test iPhone alert**. It sends the stub model's numbers, not real posture.
+- On a Mac, the iPhone app itself also runs in the Xcode Simulator on synthetic frames and the stub model (`ios/README.md`).
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `Can't reach http://127.0.0.1:5001` (simulator or seed) | The API isn't running, or it's on another port. Check `curl http://127.0.0.1:5001/api/health`. |
+| `HTTP 404 ... invalid_code` | Code expired (10 min) or already used. Dashboard **Pair → New code**. |
+| `HTTP 401` from the simulator | Token no longer valid (re-paired, or a different store). Run with a fresh `--code`. |
+| Dashboard bounces to the Pair page | Its token isn't recognised (store changed, `.devdb.json` deleted). Create a new dashboard or open a fresh `seed.py` link. |
+| No "Load demo data" button / `seed.py` says 404 | `ENABLE_DEV_ROUTES` isn't on. Check `/api/health` → `devRoutes`; for cmd use the quoted `set`. |
+| `.env` seems ignored | Run `flask` from the repo root, restart it after editing, and make sure `python-dotenv` is installed (`pip install -r requirements-dev.txt`). `pytest`/scripts never read `.env`. |
+| `/api/health` shows `memory` but you set Supabase | One of the two variables is missing or empty. Both are required. |
+| Live says "phone hasn't reported yet" | No samples for 15 s: simulator stopped or on another account. |
+| `clock_skew` (HTTP 400) | The sending device's clock is more than 1 hour off server time. |
+| Test says "not sent: ... not configured" / "no browser subscribed" | The VAPID/APNs variables are missing, or the browser/phone hasn't enabled notifications yet (see above). |
+| iPhone can't reach the API | Same Wi-Fi? Flask started with `--host 0.0.0.0`? Firewall allowing TCP 5001? `Config.baseURL` has your LAN IP and `http://`? |
+
+## Layout
+
+| Path | What |
+|---|---|
+| `api/` | Flask API. `core/` is pure, tested logic (state machine, scoring, settings, seed generator); `db.py` is the only file that touches Supabase; `push/` is APNs + Web Push |
+| `web/` | React + TypeScript + Tailwind dashboard (Vite) |
+| `ios/` | SwiftUI app (see `ios/README.md`; **not yet built**) |
+| `scripts/` | `seed.py`, `simulate.py`, `gen_vapid.py`, `check_codemap.py` |
+| `docs/` | `openapi.yaml`, `api.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
+
+`codemap.md` maps every file for quick navigation (and is what Claude reads first, per `CLAUDE.md`).
+
+## Deploy (Vercel + Supabase)
+
+> Written against the current Vercel docs but **not yet deployed**; expect to adjust on first deploy.
+
+1. **Supabase:** set it up as in [Configure everything](#supabase-real-database).
+2. **Vercel:** new project from this repo, framework preset **Flask**. `vercel.json` builds the dashboard (`web/` -> `/public`) and rewrites non-`/api` paths to the SPA. `index.py` at the repo root is the Flask entrypoint (it re-exports `api/index.py`).
+3. **Env vars** (names in [`.env.example`](.env.example)): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_*` (generate with `python scripts/gen_vapid.py`), `APNS_*`. Leave `ENABLE_DEV_ROUTES` unset on anything judges will use, unless you want the demo-data button. On Vercel the in-memory store is refused, so missing Supabase variables fail loudly.
+4. **Turn off Deployment Protection** for the project, or the phone and judges' browsers hit an auth wall.
+5. Put the temporary `https://<project>.vercel.app` URL in `ios/Sitwise/Config.swift`.
+6. If the build image has no Node, build the dashboard locally (`cd web && npm run build`) and commit `public/` (remove it from `.gitignore`).

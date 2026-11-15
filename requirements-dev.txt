@@ -2,3 +2,5 @@
 pytest>=8.0
 # Lets the `flask` CLI load a local .env (not used by pytest or scripts/, and not needed on Vercel).
 python-dotenv>=1.0
+# Laptop camera path (scripts/model_server.py, scripts/camera_test.py); not used by the API or on Vercel.
+opencv-python>=4.9

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "flask", "--app", "api.index", "run", "--port", "5001"],
+      "port": 5001
+    },
+    {
+      "name": "model",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["scripts/model_server.py"],
+      "port": 5002
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

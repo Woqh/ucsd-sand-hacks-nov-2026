@@ -15,6 +15,7 @@ python scripts/seed.py            # prints  http://localhost:5173/?token=...  an
 
 - Open the printed link (it signs this browser in). In **Settings**, set the slouch threshold to ~**8 s** so the live part is quick, and click **Enable on this computer** (needs VAPID keys: `python scripts/gen_vapid.py`) then **Test desktop alert**.
 - On the iPhone: enter the pairing code (or run the simulator: `python scripts/simulate.py --code <CODE> --loop`).
+- **Real model on a webcam** (instead of the simulator): `posture_pipeline-main\.venv\Scripts\python.exe -m bridge --facing right --code <CODE> --display` (setup and caveats: `docs/model-bridge.md`). Pairing it replaces a paired phone. Calibrate from the dashboard while it runs.
 
 ## The pitch
 
@@ -28,7 +29,7 @@ python scripts/seed.py            # prints  http://localhost:5173/?token=...  an
 
 ## Fallback
 
-- No camera or model yet: the **simulator** (`scripts/simulate.py --loop`) drives the same dashboard and alerts.
+- No camera, or the model misbehaves: the **simulator** (`scripts/simulate.py --loop`) drives the same dashboard and alerts.
 - No push credentials: the Live page, analytics and **Test** buttons still demo everything except the actual vibration; show the recorded clip of the phone buzzing.
 - Gemini unavailable or no key: skip the "Improve with Gemini" click; the on-device profile is the demo. **Gemini has never been run live in this repo, so test it once before you rely on it.**
 - Dashboard down: the recorded demo video.

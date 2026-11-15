@@ -8,6 +8,7 @@ from flask import Blueprint, g
 
 from api import util
 from api.auth import device_only
+from api.core import calibration_feed
 from api.core.settings import SampleError, config_from_settings, parse_sample
 from api.core.state_machine import AWAY, MIN_CONFIDENCE, MachineState, step
 from api.db import get_store
@@ -17,6 +18,7 @@ from api.push import dispatch
 bp = Blueprint("posture", __name__)
 
 SAMPLE_EVERY_MS = 5_000  # downsample the ~1 Hz feed to one stored reading per 5 s
+MAX_SOURCE_LEN = 80
 
 
 def _event_row(user_id: str, session_id: str, e: dict[str, Any]) -> dict[str, Any]:
@@ -30,8 +32,9 @@ def _event_row(user_id: str, session_id: str, e: dict[str, Any]) -> dict[str, An
 def ingest():
     user = g.user
     store = get_store()
+    body = util.json_body()
     try:
-        sid, sample, features = parse_sample(util.json_body())
+        sid, sample, features = parse_sample(body)
     except SampleError as exc:
         raise ApiError(400, "bad_sample", str(exc))
 
@@ -87,12 +90,20 @@ def ingest():
         last_stored = sample.t
     if last_stored:
         state_dict["stored_sample_t"] = last_stored
+    # The last ~30 s of readings, so the dashboard's guided calibration can use the live model feed.
+    seen_well = sample.confidence >= MIN_CONFIDENCE and sample.label in ("GOOD", "SLOUCHING")
+    state_dict["recent"] = calibration_feed.push_recent((sess or {}).get("state", {}).get("recent"), sample.t, seen_well, features)
+
+    last_sample: dict[str, Any] = {"t": sample.t, "label": sample.label, "deviation": sample.deviation,
+                                   "confidence": sample.confidence, "features": features}
+    source = body.get("source")                       # optional: which model produced this ("posture-pipeline/...")
+    if isinstance(source, str) and source.strip() and len(source) <= MAX_SOURCE_LEN and source.isprintable():
+        last_sample["source"] = source.strip()
 
     store.save_session({
         "id": sid, "user_id": user["id"], "started_at": started_at, "last_t": last_t,
         "last_seen_server_ms": now, "state": state_dict,
-        "last_sample": {"t": sample.t, "label": sample.label, "deviation": sample.deviation,
-                        "confidence": sample.confidence, "features": features},
+        "last_sample": last_sample,
     })
 
     alert = None

@@ -1,0 +1,17 @@
+{
+  "frames": 2,
+  "wall_seconds": 2.2876569999934873,
+  "throughput_fps": 0.8742569362477389,
+  "latency_ms_p50": 104.05100000207312,
+  "latency_ms_p95": 115.0934600038454,
+  "pose_ms_p50": 88.4511999975075,
+  "includes": "capture, pose, geometry, classifier, optional overlay; throughput also includes initialization/display/JSON I/O",
+  "warmup_excluded": false,
+  "hardware": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel"
+  },
+  "viewpoint": "side",
+  "smoothing_window": 1,
+  "classification_method": "side-angle"
+}

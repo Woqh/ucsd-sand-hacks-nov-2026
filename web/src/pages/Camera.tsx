@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
-import { Banner, Button, Card, CardTitle, Meter, STATE_META, StatePill, Toggle } from '../components/ui'
+import { Banner, Button, Card, CardTitle, Meter, Segmented, STATE_META, StatePill, Toggle } from '../components/ui'
 import { FRAME_MAX_SIDE, model, type ModelOutput } from '../model'
-import type { PairCreateResponse, PostureState } from '../types'
+import type { CalibrationBaseline, PairCreateResponse, PostureState } from '../types'
 
 // Laptop camera path: this browser tab reads a webcam (e.g. the iPhone through Camo), hands a frame
 // to the model about once a second (web/src/model.ts) and can post the result to /posture/ingest,
@@ -11,7 +11,13 @@ import type { PairCreateResponse, PostureState } from '../types'
 
 const CAMERA_KEY = 'sitwise.cameraId'
 const DEVICE_TOKEN_KEY = 'sitwise.cameraDeviceToken'
+const FACING_KEY = 'sitwise.cameraFacing'
 const INTERVAL_MS = 1000
+const GOAL_EVERY_TICKS = 10 // re-read the saved goal posture this often, so a recalibration takes effect
+const COUNTDOWN_SEC = 10
+
+type Facing = 'left' | 'right' | 'auto'
+type CalPhase = 'idle' | 'counting' | 'checking' | 'done' | 'rejected'
 
 const load = (k: string): string | null => {
   try {
@@ -146,6 +152,32 @@ export default function Camera() {
   const sendRef = useRef(false)
   sendRef.current = send
 
+  // Which way you face in the picture (where your nose points): the model can't guess it from a side view
+  // without your feet in frame, and a wrong value flips forward and backward. Unset until you choose.
+  const [facing, setFacing] = useState<Facing | ''>(() => (load(FACING_KEY) as Facing | null) ?? '')
+  const facingRef = useRef<Facing | ''>(facing)
+  facingRef.current = facing
+
+  // The saved goal posture (torso angle). The model measures every reading against it.
+  const [goal, setGoal] = useState<number | null | undefined>(undefined) // undefined = not read yet
+  const goalRef = useRef<number | null>(null)
+  const tickRef = useRef(0)
+
+  const [cal, setCal] = useState<{ phase: CalPhase; left: number; issues: string[]; error?: string }>({ phase: 'idle', left: 0, issues: [] })
+  const calTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  useEffect(() => () => clearInterval(calTimer.current), [])
+
+  const readGoal = useCallback(async () => {
+    try {
+      const { baseline } = await api<{ baseline: CalibrationBaseline | null }>('/calibration')
+      const g = baseline?.goal.torsoAngle
+      goalRef.current = typeof g === 'number' ? g : null
+      setGoal(goalRef.current)
+    } catch {
+      /* keep the last known goal; the next tick tries again */
+    }
+  }, [])
+
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
@@ -254,7 +286,8 @@ export default function Camera() {
         if (!ctx) throw new Error('Canvas is unavailable')
         ctx.drawImage(el, sx, sy, sw, sh, 0, 0, w, h)
         const t = Date.now()
-        const result = await model.analyze(ctx.getImageData(0, 0, w, h), t)
+        if (tickRef.current++ % GOAL_EVERY_TICKS === 0) await readGoal()
+        const result = await model.analyze(ctx.getImageData(0, 0, w, h), t, { facing: facingRef.current || 'auto', goal: goalRef.current })
         setOut(result)
         setModelError(null)
         setFrames((n) => n + 1)
@@ -266,7 +299,7 @@ export default function Camera() {
             const r = await api<{ state: PostureState }>('/posture/ingest', {
               method: 'POST',
               token,
-              body: { schema: 1, sessionId: sessionRef.current, t, label: result.label, deviation: result.deviation, confidence: result.confidence, features: result.features },
+              body: { schema: 1, sessionId: sessionRef.current, t, label: result.label, deviation: result.deviation, confidence: result.confidence, features: result.features, ...(result.source ? { source: result.source } : {}) },
             })
             setServerState(r.state)
             setSendError(null)
@@ -288,10 +321,11 @@ export default function Camera() {
         busyRef.current = false
       }
     }
+    tickRef.current = 0
     tick() // straight away, so the bars are trimmed as soon as the picture appears
     const id = setInterval(tick, INTERVAL_MS)
     return () => clearInterval(id)
-  }, [running])
+  }, [running, readGoal])
 
   async function toggleSend(on: boolean) {
     setSendError(null)
@@ -315,6 +349,49 @@ export default function Camera() {
       setSendError((e as Error).message)
     } finally {
       setSendBusy(false)
+    }
+  }
+
+  function changeFacing(f: Facing) {
+    setFacing(f)
+    save(FACING_KEY, f)
+  }
+
+  /** Same flow as the Calibrate tab, but here, where the camera is: sit comfortably, hold still for the
+   *  countdown, and the server averages what the model measured from the readings this page sends. */
+  async function startCalibration() {
+    if (!running) return
+    setCal({ phase: 'counting', left: COUNTDOWN_SEC, issues: [] })
+    if (!sendRef.current) await toggleSend(true) // the server can only measure readings it receives
+    let n = COUNTDOWN_SEC
+    clearInterval(calTimer.current)
+    calTimer.current = setInterval(() => {
+      n -= 1
+      setCal((c) => ({ ...c, left: n }))
+      if (n <= 0) {
+        clearInterval(calTimer.current)
+        void finishCalibration()
+      }
+    }, 1000)
+  }
+
+  async function finishCalibration() {
+    setCal((c) => ({ ...c, phase: 'checking' }))
+    try {
+      const baseline = await api<CalibrationBaseline>('/model/calibrate/finish', { method: 'POST' })
+      if (baseline.accepted === false) return setCal({ phase: 'rejected', left: 0, issues: baseline.issues ?? [] })
+      if (baseline.stub) {
+        // No live readings reached the server (a placeholder/stub model, or sending is off): never save mock values as the goal.
+        return setCal({ phase: 'rejected', left: 0, issues: ['The server did not receive live readings from this page, so nothing was saved. Check the model reading above and that sending is on.'] })
+      }
+      const stored = await api<{ baseline: CalibrationBaseline }>('/calibration', { method: 'PUT', body: baseline })
+      const g = stored.baseline.goal.torsoAngle
+      goalRef.current = typeof g === 'number' ? g : null
+      setGoal(goalRef.current)
+      setCal({ phase: 'done', left: 0, issues: [] })
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'posture_not_good') return setCal({ phase: 'rejected', left: 0, issues: e.issues ?? [e.message] })
+      setCal({ phase: 'idle', left: 0, issues: [], error: (e as Error).message })
     }
   }
 
@@ -415,6 +492,7 @@ export default function Camera() {
                     {Math.round(out.confidence * 100)}% confidence{out.inferenceMs != null ? ` · ${Math.round(out.inferenceMs)} ms` : ''}
                   </span>
                 </div>
+                {out.note && <p className="text-xs text-ink-2">{out.note}</p>}
                 <div>
                   <div className="mb-1 flex justify-between text-ink-2">
                     <span>Deviation from goal posture</span>
@@ -433,6 +511,68 @@ export default function Camera() {
               </div>
             ) : (
               <p className="text-sm text-ink-2">{running ? 'Waiting for the first frame…' : 'Start the camera to run the model on the feed.'}</p>
+            )}
+          </Card>
+
+          <Card>
+            <CardTitle>Which way do you face?</CardTitle>
+            <p className="mb-3 text-xs text-ink-2">
+              Where your nose points in the picture above. The model needs this to tell leaning forward from leaning back; a wrong choice flips
+              them. Auto only works when your feet are in view.
+            </p>
+            <Segmented<Facing>
+              label="Which way you face in the picture"
+              value={facing || 'auto'}
+              onChange={changeFacing}
+              options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }, { value: 'auto', label: 'Auto' }]}
+            />
+            {!facing && <p className="mt-2 text-xs text-ink-2">Not chosen yet, so the model is guessing (Auto). Pick Left or Right.</p>}
+          </Card>
+
+          <Card>
+            <CardTitle hint={goal === undefined ? undefined : goal === null ? 'not set' : `${goal.toFixed(1)}° from vertical`}>Goal posture</CardTitle>
+            {cal.phase === 'idle' || cal.phase === 'done' || cal.phase === 'rejected' ? (
+              <>
+                <p className="mb-3 text-xs text-ink-2">
+                  {goal == null
+                    ? 'No goal posture yet, so readings are measured against sitting upright. '
+                    : 'Readings are measured against your saved goal posture. '}
+                  Sit the way you want to sit, then hold still while the countdown runs.
+                </p>
+                <Button variant="secondary" onClick={startCalibration} disabled={!running}>
+                  {goal == null ? 'Set my goal posture' : 'Set it again'}
+                </Button>
+                {!running && <span className="ml-3 text-xs text-ink-2">Start the camera first.</span>}
+              </>
+            ) : (
+              <div className="text-center" aria-live="polite">
+                <div className="text-sm text-ink-2">{cal.phase === 'counting' ? 'Hold your best posture' : 'Checking your posture…'}</div>
+                <div className="my-2 text-6xl font-semibold tracking-tight text-ink">{Math.max(0, cal.left)}</div>
+              </div>
+            )}
+            {cal.error && (
+              <div className="mt-3">
+                <Banner tone="error">{cal.error}</Banner>
+              </div>
+            )}
+            {cal.phase === 'done' && (
+              <div className="mt-3">
+                <Banner tone="info">
+                  <strong>Saved.</strong> Slouch alerts now measure against it.
+                </Banner>
+              </div>
+            )}
+            {cal.phase === 'rejected' && (
+              <div className="mt-3" role="alert">
+                <Banner tone="warn">
+                  <strong>That wasn't saved.</strong>
+                  <ul className="mt-1 list-disc pl-5">
+                    {(cal.issues.length ? cal.issues : ['Your posture looked slouched.']).map((i) => (
+                      <li key={i}>{i}</li>
+                    ))}
+                  </ul>
+                </Banner>
+              </div>
             )}
           </Card>
 

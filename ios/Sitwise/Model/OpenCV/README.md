@@ -1,3 +1,9 @@
+> **Update:** the teammate delivered a **Python 3.12 + MediaPipe** pipeline (`posture_pipeline-main/`), not OpenCV
+> code, and it runs on a computer through `bridge/` (see `docs/model-bridge.md`). This iOS seam is **still the stub**.
+> To run it on the phone: MediaPipe Tasks for iOS (Pose Landmarker) for the landmarks, a Swift/Obj-C++ port of
+> `posture/core.py:measure_pose` and `posture/side_angle.py` (small 2D geometry; the sign and facing rules are in
+> `docs/MEASUREMENTS.md`), mapped to `PostureSample` as `bridge/adapter.py` does. Not started.
+
 # OpenCV bridge (teammate-owned, not started)
 
 The real `PostureModel` lives here. Suggested shape (agree before editing the Xcode project):

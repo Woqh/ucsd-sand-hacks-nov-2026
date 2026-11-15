@@ -1,0 +1,185 @@
+{
+  "posture_category": null,
+  "class_probabilities": null,
+  "prediction_valid": false,
+  "abstention_reasons": [
+    "No person detected.",
+    "missing_or_low_confidence_hip_reference",
+    "Severe occlusion or missing required torso landmarks.",
+    "Low torso landmark confidence."
+  ],
+  "raw_prediction": {
+    "posture_category": null,
+    "class_probabilities": null,
+    "prediction_valid": false
+  },
+  "smoothed_prediction": {
+    "posture_category": null,
+    "class_probabilities": null,
+    "prediction_valid": false,
+    "window_frames": 1,
+    "maximum_history_age_ms": 500.0,
+    "history_frames": 0,
+    "estimated_delay_ms": 0.0
+  },
+  "measurements": {
+    "torso_inclination_deg": null,
+    "sagittal_torso_inclination_deg": null,
+    "neck_inclination_deg": null,
+    "hip_flexion_deg": null,
+    "knee_flexion_deg": null,
+    "shoulder_alignment_deg": null,
+    "hip_alignment_deg": null,
+    "lateral_trunk_inclination_deg": null
+  },
+  "measurement_details": {
+    "torso_inclination_deg": {
+      "valid": false,
+      "reason": "missing_or_nonfinite_landmark",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint",
+      "selected_body_side": null
+    },
+    "sagittal_torso_inclination_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_anatomical_forward_negative_backward",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint",
+      "selected_body_side": null
+    },
+    "neck_inclination_deg": {
+      "valid": false,
+      "reason": "missing_or_nonfinite_landmark",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_ear",
+        "right_ear",
+        "left_shoulder",
+        "right_shoulder"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "shoulder_midpoint_to_ear_midpoint",
+      "selected_body_side": null
+    },
+    "hip_flexion_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [],
+      "sign_convention": "unsigned_0_straight_to_180_folded",
+      "reference_axis": "adjacent_projected_limb_segments",
+      "proxy": "180_minus_projected_included_joint_angle",
+      "selected_body_side": null
+    },
+    "knee_flexion_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [],
+      "sign_convention": "unsigned_0_straight_to_180_folded",
+      "reference_axis": "adjacent_projected_limb_segments",
+      "proxy": "180_minus_projected_included_joint_angle",
+      "selected_body_side": null
+    },
+    "shoulder_alignment_deg": {
+      "valid": false,
+      "reason": "missing_or_nonfinite_landmark",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder"
+      ],
+      "sign_convention": "positive_if_image_right_endpoint_is_higher",
+      "reference_axis": "roll_corrected_image_horizontal",
+      "proxy": "bilateral_landmark_line_slope",
+      "selected_body_side": null
+    },
+    "hip_alignment_deg": {
+      "valid": false,
+      "reason": "missing_or_nonfinite_landmark",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_if_image_right_endpoint_is_higher",
+      "reference_axis": "roll_corrected_image_horizontal",
+      "proxy": "bilateral_landmark_line_slope",
+      "selected_body_side": null
+    },
+    "lateral_trunk_inclination_deg": {
+      "valid": false,
+      "reason": "missing_or_nonfinite_landmark",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint_frontal_projection",
+      "selected_body_side": null
+    }
+  },
+  "quality": {
+    "pose_confidence": 0.0,
+    "pose_confidence_definition": "mean_min_visibility_presence_over_shoulders_and_hips_missing_equals_zero",
+    "viewpoint": "front",
+    "viewpoint_source": "operator-supplied; not inferred",
+    "facing": "unknown",
+    "facing_source": "unknown",
+    "facing_reason": null,
+    "camera_roll_deg": 0.0,
+    "camera_roll_source": "upright_camera_assumption",
+    "usable_landmark_count": 0,
+    "landmark_confidence_threshold": 0.5,
+    "warnings": [
+      "Camera roll is assumed zero; use an external vertical reference to calibrate it.",
+      "Some torso landmarks are missing, outside the image, or below the confidence threshold.",
+      "No person detected.",
+      "missing_or_low_confidence_hip_reference",
+      "Severe occlusion or missing required torso landmarks.",
+      "Low torso landmark confidence."
+    ],
+    "application_domain": "Seated people only; sitting is an operator-checked precondition",
+    "person_count": 0,
+    "valid_joint_fraction": 0.0,
+    "probability_calibration": "Temperature fitted on held-out MultiPosture participants; deployment calibration unverified",
+    "coordinate_spaces": {
+      "classifier": "uncalibrated estimated world landmarks",
+      "measurements": "2D image projections"
+    }
+  },
+  "timestamp_monotonic_s": 117515.875,
+  "latency_ms": {
+    "pose": 44.70790000050329,
+    "geometry_classifier_smoothing": 2.0296000002417713
+  }
+}

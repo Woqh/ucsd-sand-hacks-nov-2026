@@ -10,7 +10,7 @@
 
 Most posture apps do one thing: they spot a slouch and buzz you. It has no memory, no idea what
 "good" means *for your body*, and no way to tell whether any of it is helping. Sitwise is built the other way
-round. A phone on your chair watches from the side and measures posture **on the device, so only numbers
+round. A camera on your chair watches from the side and the model measures posture **on your own device, so only numbers
 ever leave it**. We learn *your* goal posture, nudge you against a threshold *you* set, and keep a private
 history that turns into insight over weeks: when you slouch, how fast you recover, whether your habits are
 improving, and how your own pain lines up with your own posture. From that history we build a **coaching profile
@@ -50,7 +50,9 @@ iPhone on the chair (side view)           Flask API on Vercel             Tiger 
           '---- push notification (vibrates) -----'    '--> React dashboard (analytics, coaching, evidence)
 ```
 
-- **On-device model** (teammate-owned; stubbed in our demo): OpenCV pose features, sent as numbers only.
+- **The model** (teammate-built): MediaPipe pose landmarks plus a side-view angle rule that labels upright / leaning
+  forward / leaning back. In our demo the iPhone's picture (through Camo) shows in the dashboard's Camera page, the model runs on the laptop, and
+  only its numbers go on to the database; the iPhone app itself still uses a stub until the model is ported to the phone.
 - **A posture state machine** (GOOD, DEVIATING, SLOUCHING, AWAY) driven by *your* thresholds, written as a pure,
   unit-tested function so it runs on stateless serverless functions.
 - **Alerts:** a push notification on the phone (it vibrates) and a web push on the desktop.
@@ -184,7 +186,7 @@ when we built it). The on-device profile is what we demo if the API is unavailab
 | Built | Not yet / caveats |
 |---|---|
 | Web dashboard: Live status, Analytics, Pain & evidence, **Coach**, Calibration, Settings, Pairing | iOS app is written but **not yet compiled on a Mac/device** |
-| 27-route API with a unit-tested state machine, per-user alert rules, quiet hours | **On-device pose model is a teammate's and is stubbed** (the interface runs end to end on it) |
+| 27-route API with a unit-tested state machine, per-user alert rules, quiet hours | **Real model integrated end to end** (iPhone feed in the Camera page -> MediaPipe + angle rule -> database, calibration measured live; also a headless webcam bridge), verified with a simulated camera feed, **not yet with a physical camera**. The **iPhone app is still on the stub**; the side-view rule is a heuristic, not a validated classifier |
 | Calibration gate (spine/back angle within 10° of upright, plus the model's verdict) | Push notifications not yet tested with real Apple/VAPID credentials |
 | Analytics: score, trend, heatmap, recovery time, goals, streaks, session timeline | Tiger Cloud service not yet connected (tested on plain Postgres) |
 | Pain check-in vs your slouching; evidence meter; cited population context; local export | No data sharing exists (by design, until consent and ethics are in place) |
@@ -206,7 +208,7 @@ when we built it). The on-device profile is what we demo if the API is unavailab
   only in your browser. Without Gemini the same profile is built on your device.
 - **"Why Tiger Data?"** Our core data is a time series; hypertables, compression and (next) continuous aggregates
   are the natural fit, and the pooler suits serverless.
-- **"What's real?"** Everything in the demo is real software except the pose model (stubbed) and the demo history and
+- **"What's real?"** Everything in the demo is real software, including the teammate's pose model when the webcam bridge is running (the phone app's model is still a stub), except the demo history and
   pain check-ins (synthetic, labelled).
 
 ## Where we're going
@@ -227,8 +229,9 @@ that actually changes habits: *"what's true about **your** posture over time, an
 - [ ] Create a Tiger Cloud service, run `python scripts/init_db.py`, and confirm `events` is a hypertable. **Don't say "running on Tiger Cloud" on stage until this is done.**
 - [ ] Re-check every number against `docs/health-claims.md` (no source, no number); the demo data is synthetic, so say so.
 - [ ] Confirm the hackathon track rules (Tiger Data, Data for Good) and tailor the emphasis.
-- [ ] Confirm the `torsoAngle` convention and the 10° range with the model teammate.
+- [ ] Try the real flow with the **physical iPhone through Camo** on a chair side mount (`docs/camera-setup.md`; the model server needs the Python 3.12 venv). Choose Left/Right under "Which way do you face?", set the goal posture, turn on "Send readings". It has only been run on a simulated feed (a test photo), never a live camera.
+- [ ] Ask the teammate: does a 10° band suit real sitters, should `headForwardOffset` exist, and can the side-view rule be checked on labelled footage? Don't call it "validated" until then.
 - [ ] Rehearse the demo from `docs/demo-script.md`; keep the simulator as the fallback and a recorded video as backup.
 - [ ] Get a **billing-enabled** Gemini key, set `GEMINI_API_KEY`, and run the Coach tab's "Improve with Gemini" once end to end. It has **never been run live**; don't claim it on stage until it has. Keep the on-device profile as the fallback.
 - [ ] Re-read Google's current Gemini API terms (free vs paid data use) before the demo.
-- [ ] Confirm the feature convention with the model teammate (larger angle/offset = more forward); the fingerprint and drift depend on it.
+- [ ] The fingerprint and drift read larger torso/neck angle as more forward; the teammate's convention matches for torso, and the bridge signs the neck forward. They have no head-forward offset, so the fingerprint uses neck and torso only.

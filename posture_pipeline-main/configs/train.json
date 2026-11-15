@@ -1,0 +1,18 @@
+{
+  "seed": 42,
+  "epochs": 80,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "weight_decay": 0.0001,
+  "patience": 12,
+  "min_delta": 0.0001,
+  "class_weighting": true,
+  "scale_jitter": 0.03,
+  "dropout": 0.2,
+  "device": "cpu",
+  "num_threads": 2,
+  "ece_bins": 10,
+  "latency_warmup": 20,
+  "latency_repeats": 100,
+  "probability_thresholds": [0.0, 0.5, 0.6, 0.7, 0.8, 0.9]
+}

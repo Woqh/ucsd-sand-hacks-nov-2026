@@ -4,12 +4,14 @@ A posture **coach**: an iPhone on your chair watches from the side, a model on t
 your posture, and the system nudges you in real time and coaches you over weeks. UCSD SanD Hacks,
 November 2026.
 
-What's here: the **interface** (iPhone app, web dashboard, API, database, push). The **model**
-(on-device OpenCV pose estimation and classification) is a teammate's and is **stubbed** behind a
-Swift protocol and `/api/model/*` endpoints that return fixed mock data.
+What's here: the **interface** (iPhone app, web dashboard, API, database, push) and the teammate's **model**
+(`posture_pipeline-main/`, Python + MediaPipe), connected through a **webcam bridge** (`bridge/`, see
+[Run the real model](docs/model-bridge.md)). The iPhone app still uses a **stub** model (a Swift
+protocol), and `/api/model/*` returns fixed mock data unless the bridge is streaming.
 
 **Contents:** [Quick start](#quick-start-no-accounts-no-phone-needed) ·
-[Configure everything](#configure-everything) · [Simulate the phone](#simulate-the-phone) ·
+[Configure everything](#configure-everything) · [Run the real model](docs/model-bridge.md) ·
+[Simulate the phone](#simulate-the-phone) ·
 [Troubleshooting](#troubleshooting) · [Layout](#layout) · [Deploy](#deploy-vercel--tiger-cloud)
 
 ## Quick start (no accounts, no phone needed)
@@ -42,7 +44,7 @@ python scripts/seed.py               # prints a login link and a pairing code
 python scripts/simulate.py --code <PAIRING_CODE> --loop
 ```
 
-Open the link `seed.py` printed. Tests: `pytest api` (pure logic + end-to-end API) and, for the dashboard's
+Open the link `seed.py` printed. Tests: `pytest api bridge` (pure logic, end-to-end API, the model bridge) and, for the dashboard's
 on-device analysis and calendar parsing, `cd web && npm test`. **Run `npm test` from PowerShell or cmd.exe, not Git
 Bash**: vitest fails there on Windows with a path-case error (`Cannot read properties of undefined (reading 'config')`).
 
@@ -144,7 +146,7 @@ Needs a Mac with Xcode, a **physical iPhone** (the camera), and a paid **Apple D
 4. **Let the phone reach your PC:** start Flask with `--host 0.0.0.0` (`flask --app api.index run --host 0.0.0.0 --port 5001`; **drop `--debug`** there, because the debugger would be reachable from your network), put the phone on the same Wi-Fi, and allow inbound TCP 5001 in Windows Firewall when prompted.
 5. **Pair and test:** get a code from the dashboard's **Pair** page, enter it in the app, then **Settings → Test iPhone alert** in the dashboard. "Sent to 1 device." means it worked.
 
-Without any of this the app still runs end to end on the stub model; you just won't get real pushes.
+Without any of this the app still runs end to end on the stub model (or the webcam bridge); you just won't get real pushes.
 
 ### Dashboard options
 
@@ -166,13 +168,17 @@ In short:
 1. Keep **Camo Studio** open with the phone connected and upright (closing it makes the feed black).
 2. Start the API, the dashboard and `python scripts/model_server.py`, open **Camera** in Chrome or
    Edge, press **Start camera** and pick the Camo source. The page shows a vertical view.
-3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`. That file is a
-   **placeholder** today (it returns `UNKNOWN`); the PyTorch model goes there.
-4. **Send readings to the dashboard** makes the tab act as the phone, so Live, alerts and analytics
-   run off the feed. It replaces any paired phone.
+3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`, which runs the teammate's
+   **MediaPipe pose model + side-view angle rule** (`posture_pipeline-main/`). Start the model server with the
+   model's Python 3.12 venv: `posture_pipeline-main\.venv\Scripts\python.exe scripts/model_server.py`
+   ([`docs/model-bridge.md`](docs/model-bridge.md) has the one-time setup). With any other Python it serves a
+   placeholder and says why.
+4. Choose **which way you face** (Left or Right) on the page, then **Send readings to the dashboard**: the tab acts as
+   the phone, so the readings go through the model into the database and Live, alerts, analytics and Coach run off
+   them. **Set my goal posture** calibrates from the same feed. It replaces any paired phone.
 
 Frames go from the browser tab to the model server on the same computer, are analysed in memory and
-dropped; the hosted API still accepts no images.
+dropped; the hosted API still accepts no images. Only numbers reach the database.
 
 ## Simulate the phone
 

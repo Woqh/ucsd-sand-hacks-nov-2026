@@ -1,0 +1,44 @@
+{
+  "preprocessing_version": "world_v1",
+  "source_sha256": "d21579200db9a57dd01c24fa6ece961b0be73aa0d5d402ae8e629761c03ebe38",
+  "normalization": "hip midpoint; median visible shoulder-hip lengths; no rotation",
+  "confidence_available": false,
+  "source_estimator": "MediaPipe Pose Heavy, source version unknown",
+  "confidence_semantics": "zeros with known=0 mean unavailable, not invisible",
+  "split_seed": 42,
+  "subject_split": {
+    "test": [
+      "1",
+      "13"
+    ],
+    "calibration": [
+      "8",
+      "11"
+    ],
+    "val": [
+      "10",
+      "4"
+    ],
+    "train": [
+      "7",
+      "6",
+      "3",
+      "5",
+      "12",
+      "2",
+      "9"
+    ]
+  },
+  "split_sizes": {
+    "train": 2694,
+    "val": 750,
+    "calibration": 540,
+    "test": 810
+  },
+  "supported_viewpoints": [
+    "front"
+  ],
+  "viewpoint_limit": "Approximate acquisition domain from paper, not per-frame verified",
+  "temporal_available": false,
+  "session_leakage_control": "Subjects are disjoint, enclosing all their sessions; sessions not separately identified"
+}

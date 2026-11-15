@@ -9,7 +9,7 @@
     },
     {
       "name": "model",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "posture_pipeline-main/.venv/Scripts/python.exe",
       "runtimeArgs": ["scripts/model_server.py"],
       "port": 5002
     },

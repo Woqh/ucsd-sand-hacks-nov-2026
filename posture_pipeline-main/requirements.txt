@@ -1,0 +1,12 @@
+numpy==1.26.4
+torch==2.6.0
+scikit-learn==1.6.1
+mediapipe==0.10.21
+opencv-contrib-python==4.11.0.86
+pytest==8.3.5
+# Pin transitive numerical packages to avoid resolver backtracking.
+scipy==1.17.1
+jax==0.7.1
+jaxlib==0.7.1
+matplotlib==3.11.2
+protobuf==4.25.9

@@ -1,17 +1,20 @@
-# Camera setup: iPhone feed on your laptop, and where the model plugs in
+# Camera setup: iPhone feed on your laptop, through the model, into the dashboard
 
-This gets an iPhone's camera showing in the dashboard on your laptop, then runs your trained
-(PyTorch) model on that feed. It is the laptop path for developing the model before the iOS app is
-built. It takes about 15 minutes the first time.
+This gets an iPhone's camera showing in the dashboard on your laptop, runs the teammate's posture model
+(MediaPipe pose + a side-view angle rule) on that feed, and stores the readings in the database like the phone
+would. It is the laptop path until the model runs inside the iOS app. It takes about 15 minutes the first time.
 
 How the pieces connect:
 
 ```
 iPhone (Camo app)  ->  Camo Studio on the laptop  ->  shows up as a webcam
-   ->  dashboard Camera page (browser)  --one frame per second-->  scripts/model_server.py
-   ->  scripts/posture_model.py: predict(frame)   <- YOUR MODEL GOES HERE
-   ->  result shown on the page, and (optional) sent to the Live dashboard
+   ->  dashboard Camera page (browser)  --one frame per second, to 127.0.0.1 only-->  scripts/model_server.py
+   ->  scripts/posture_model.py -> bridge/engine.py: MediaPipe pose + the angle rule (posture_pipeline-main/)
+   ->  a label, a deviation and two angles come back to the page
+   ->  the page posts them to /api/posture/ingest -> state machine -> database -> Live, alerts, Analytics, Coach
 ```
+
+(`bridge/` can also read a webcam without a browser: [`model-bridge.md`](model-bridge.md). Both use the same model code.)
 
 ## What you need
 
@@ -49,7 +52,12 @@ npm install
 cd ..
 ```
 
-Install what your model needs as well, for example `pip install torch`.
+The model needs **Python 3.12** (MediaPipe has no 3.14 build), kept separate from the API's Python. One time:
+
+```powershell
+py -3.12 -m venv posture_pipeline-main\.venv
+posture_pipeline-main\.venv\Scripts\python.exe -m pip install numpy==1.26.4 mediapipe==0.10.21 opencv-contrib-python==4.11.0.86 flask
+```
 
 ## 3. Start three things
 
@@ -61,8 +69,8 @@ python -m flask --app api.index run --debug --port 5001
 ```
 
 ```bash
-# 2. model server (port 5002): runs scripts/posture_model.py on each frame
-python scripts/model_server.py
+# 2. model server (port 5002): runs the posture model on each frame (the model's Python 3.12 venv)
+posture_pipeline-main\.venv\Scripts\python.exe scripts/model_server.py
 ```
 
 ```bash
@@ -84,55 +92,43 @@ What you should see:
 - **A vertical picture of you**, head to chair base. Webcam feeds are always wide, so the page trims
   the dark bars Camo adds either side of an upright phone, and crops anything still wide to its
   centre. The line above the video says what it did, for example `showing 405×720 of 1280×720`.
-- **Model reading** says `Model: Local Python model: Placeholder (no posture model yet)` and shows
-  `UNKNOWN` with a brightness and frame size. That is the placeholder proving frames reach Python.
-  If it says `Stub (fixed mock data)` instead, the model server was not running when the camera
-  started: start it, then **Stop camera** and **Start camera**.
+- **Model reading** says `Model: Local Python model: Side-angle rule on MediaPipe (...)`. Until you say
+  which way you face (below) it shows `UNKNOWN` and tells you to pick. If it says `Placeholder` or
+  `Stub (fixed mock data)` instead, the real model did not load or the server was not running when the camera
+  started: see Troubleshooting, then **Stop camera** and **Start camera**.
 
-## 5. Plug in your model
+## 5. Tell it which way you face, and set your goal posture
 
-Everything model-specific lives in one file: [`scripts/posture_model.py`](../scripts/posture_model.py).
-The server, the page and the dashboard do not need to change.
+On the Camera page, to the right of the picture:
 
-- `load()` runs once when the server starts. Load your weights here.
-- `predict(frame_bgr)` runs about once a second. It gets the current picture and returns a dict.
+1. **Which way do you face?** Choose **Left** or **Right**: where your nose points in the picture above. This
+   matters: from a side view the model can't tell leaning forward from leaning back without it, and a wrong choice
+   flips them. (**Auto** only works when your feet are in view.) The choice is remembered.
+2. Turn on **Send readings to the dashboard** (section 6) so the readings reach the server.
+3. **Goal posture, Set my goal posture**: sit the way you want to sit, hold still for the 10-second countdown, and the
+   server averages what the model measured. It is refused (with reasons) if the model couldn't see you for most of
+   it, you moved around, or the posture is more than 10 degrees from upright either way. It is the same as the
+   **Calibrate** tab, but here where the camera is. Every later reading is measured against it.
 
-**What `predict` receives:** a NumPy array exactly as OpenCV gives it: `uint8`, shape
-`(height, width, 3)`, **BGR** channel order (use `cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)` for
-RGB). It is the same vertical picture the page shows, with the longest side at most 640 px, so
-typically about 360 wide by 640 tall.
+**What the model is.** The teammate's pipeline (`posture_pipeline-main/`): MediaPipe finds your joints, and for a
+side camera a deterministic rule labels upright / leaning forward / leaning back using your torso angle (a +/-10
+degree band around your goal). It's a heuristic, not a validated classifier, and it can't see sideways leaning. The
+exact mapping to the stored fields, and every limit, are in [`model-bridge.md`](model-bridge.md).
 
-**What `predict` must return:**
+**Swapping the model later.** Everything model-specific sits behind
+[`scripts/posture_model.py`](../scripts/posture_model.py): `load()` once, `predict(frame_bgr, facing, goal)` about
+once a second, returning `label` (`GOOD` / `SLOUCHING` / `AWAY` / `UNKNOWN`), `deviation` (0 = on goal, about 1 =
+far off), `confidence`, `features` (`torsoAngle` in degrees from vertical, + = forward), and optionally `source` and
+`note`. The server, the page and the dashboard don't change. If `predict` raises, the error text appears on the page
+and the traceback in the model server's terminal.
 
-| Key | Value |
-|---|---|
-| `label` | `"GOOD"`, `"SLOUCHING"`, `"AWAY"` (nobody in frame) or `"UNKNOWN"` |
-| `deviation` | number, 0 = on the goal posture, about 1 = far off it |
-| `confidence` | number from 0 to 1 |
-| `features` | dict of numbers to show and store, e.g. `neckAngle`, `torsoAngle`, `headForwardOffset` (may be empty) |
-
-`torsoAngle` has a fixed meaning because calibration depends on it: degrees from vertical, positive =
-leaning forward (see [`api.md`](api.md)). The model only reports what it sees; the server decides
-when to alert (grace period, cooldown, quiet hours).
-
-When your model is in:
-
-1. Set `IS_PLACEHOLDER = False` and give `NAME` your model's name (both at the top of the file).
-2. Restart `python scripts/model_server.py`.
-3. On the Camera page, **Stop camera** then **Start camera**.
-
-The page then shows your label, confidence, features and how long each prediction took. If
-`predict` raises, the error text appears on the page under **Model reading**, and the full traceback
-is in the model server's terminal.
-
-The file's docstrings contain a short PyTorch example of both functions. Keep large weight files out
-of git unless the team agrees otherwise.
-
-## 6. Drive the dashboard from the camera (optional)
+## 6. Drive the dashboard from the camera
 
 On the Camera page, turn on **Send readings to the dashboard**. The browser tab then acts as the
-phone: each reading is posted to the API, so **Live**, alerts and **Analytics** run off your real
-posture. Turning it on for the first time replaces any phone that is currently paired.
+phone: each reading is posted to the API, so **Live**, alerts, **Analytics** and **Coach** run off your real
+posture, and the readings are stored in the database. Turning it on for the first time replaces any phone that is
+currently paired. Only a label, a deviation, a confidence, the torso and neck angles and the model's name are
+stored: never a picture.
 
 ## Check the camera without the browser
 
@@ -154,6 +150,9 @@ here while a browser tab is using it, so stop the camera on the page first.
 | The picture is the laptop's own webcam | Pick the Camo camera in **Source**. |
 | "The camera is in use by another app" | Close Zoom, Teams, or a running `camera_test.py` preview. |
 | Model reading says `Stub (fixed mock data)` | The model server was not running when the camera started. Start it, then stop and start the camera. |
+| Model reading says `Placeholder` | The server was started with the wrong Python, so the real model did not load. Its terminal says why. Start it with `posture_pipeline-main\.venv\Scripts\python.exe scripts/model_server.py` (and `pip install flask` into that venv once). |
+| Always `UNKNOWN`, "Pick which way you face" | Choose Left or Right under **Which way do you face?**. If it still abstains, the note under the label says why (nobody in view, two people, torso out of frame). |
+| The goal posture is refused, "We couldn't see you clearly" | Sit fully in the picture, head to hips, alone, and make sure **Send readings to the dashboard** is on. |
 | "Can't reach the local model server" | `python scripts/model_server.py` stopped or crashed. Check its terminal. |
 | The vertical view cuts into the picture, or shows black | Note the `showing … of …` line above the video and how the picture looks in Camo Studio, and tell whoever maintains `web/src/pages/Camera.tsx` (`findPicture`). |
 | You do not fit head to chair base | Move the phone further back. The page can only show what the phone sees. |
@@ -164,3 +163,5 @@ here while a browser tab is using it, so stop the camera on the page first.
 Frames go from the browser tab to the model server on the same computer (`127.0.0.1`), are analysed
 in memory and dropped. Nothing is saved or uploaded, and the hosted API accepts no images. Only the
 numbers `predict` returns leave the tab, and only when **Send readings to the dashboard** is on.
+The model server listens on `127.0.0.1` only, and `bridge/adapter.py` refuses to pass on anything but
+numbers and a label.

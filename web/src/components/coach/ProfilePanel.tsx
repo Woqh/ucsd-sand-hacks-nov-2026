@@ -163,6 +163,7 @@ export default function ProfilePanel({ insights, onToneApplied }: { insights: Co
   }
 
   async function sendToGemini() {
+    if (!consent || !preview || phase === 'sending') return
     setPhase('sending')
     setMessage(null)
     try {
@@ -219,14 +220,14 @@ export default function ProfilePanel({ insights, onToneApplied }: { insights: Co
       </Card>
 
       <Card>
-        <CardTitle>Go deeper with Gemini (optional)</CardTitle>
+        <CardTitle>Gemini suggestor</CardTitle>
         <p className="text-sm text-ink-2">
           Gemini can write a more tailored read on how you respond to coaching. It works only from de-identified habit numbers, and only if you say yes each time.
         </p>
 
         {!ai.configured ? (
           <p className="mt-3 rounded-xl bg-line/40 p-3 text-sm text-ink-2">
-            Gemini isn't switched on for this server, so the on-device profile above is what you get. Nothing is missing: it uses the same numbers.
+            Gemini suggestions are unavailable until the server is configured. Your on-device profile is still available.
           </p>
         ) : phase === 'idle' ? (
           <div className="mt-3">

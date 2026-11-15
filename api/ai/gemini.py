@@ -20,7 +20,7 @@ from typing import Any, Callable, Optional
 
 from api.ai.schemas import AIOutputError, parse_output
 
-DEFAULT_MODEL = "gemini-3.5-flash-lite"   # Google's recommendation for new projects: gemini-4-hydrogen or this
+DEFAULT_MODEL = "gemini-3.8-flash"
 TIMEOUT_MS = 30_000
 MAX_CALLS_PER_HOUR = 6                    # per user, best effort (per server process)
 

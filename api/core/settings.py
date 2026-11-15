@@ -12,6 +12,7 @@ SCHEMA = 1
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "schema": SCHEMA,
+    "dataCollectionConsent": False,
     "slouchThresholdSec": 30,
     "sensitivity": 0.5,
     "alertChannels": {"phone": True, "desktop": True},
@@ -54,6 +55,12 @@ def merge_settings(current: Optional[dict[str, Any]], patch: dict[str, Any]) -> 
     ranged("sensitivity", 0, 1)
     ranged("cooldownSec", 15, 3600, integer=True)
     ranged("tzOffsetMin", -840, 840, integer=True)
+
+    if "dataCollectionConsent" in patch:
+        if isinstance(patch["dataCollectionConsent"], bool):
+            out["dataCollectionConsent"] = patch["dataCollectionConsent"]
+        else:
+            errors.append("dataCollectionConsent must be a boolean")
 
     if "alertChannels" in patch:
         ch = patch["alertChannels"]

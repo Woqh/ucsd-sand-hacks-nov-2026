@@ -30,6 +30,7 @@ def auth(token):
 def paired(client):
     r = client.post("/api/pair/create").get_json()
     dash = r["dashboardToken"]
+    client.put("/api/settings", json={"dataCollectionConsent": True}, headers=auth(dash))
     dev = client.post("/api/pair/claim", json={"code": r["pairingCode"].lower()}).get_json()["deviceToken"]
     return dash, dev
 

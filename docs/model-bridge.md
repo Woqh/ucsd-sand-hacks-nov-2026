@@ -7,7 +7,7 @@ phone would, so the dashboard, state machine, nudges, analytics and Coach all wo
 
 1. **The iPhone through Camo, in the dashboard (the iPhone side).** The **Camera** page shows the phone's picture, sends
    a frame a second to `scripts/model_server.py` on `127.0.0.1`, which runs the model, and the page posts the result.
-   Calibrate and choose your facing on that page. Guide: [`camera-setup.md`](camera-setup.md).
+   Allow data collection and choose your facing on that page. Guide: [`camera-setup.md`](camera-setup.md).
 2. **A webcam read by Python (`python -m bridge`).** Headless, no browser; described below.
 
 **Privacy:** frames are analysed in memory on that computer and dropped. Only a label and a few angles leave it
@@ -34,7 +34,7 @@ Keep it separate from the API's Python. From the repo root:
 
 ```powershell
 py -3.12 -m venv posture_pipeline-main\.venv        # install 3.12 first if `py -0` doesn't list it (winget install Python.Python.3.12)
-posture_pipeline-main\.venv\Scripts\python.exe -m pip install numpy==1.26.4 mediapipe==0.10.21 opencv-contrib-python==4.11.0.86
+posture_pipeline-main\.venv\Scripts\python.exe -m pip install -r scripts/requirements-model.txt
 ```
 
 That is all the bridge needs (about 700 MB on disk: MediaPipe pulls in JAX and Matplotlib). The teammate's full lock file (`requirements-lock.windows-cpu.txt`, adds
@@ -66,9 +66,9 @@ posture_pipeline-main\.venv\Scripts\python.exe -m bridge --facing right --code A
 - `--interval` (1 s), `--fps` (max frames analysed per second, 5), `--smoothing-window` (3), `--lean-threshold-deg` (10),
   `--camera-roll-deg` (0). `python -m bridge --help` lists everything.
 
-**Calibrate from the dashboard as usual** (Calibrate tab): while the bridge streams, the 10-second countdown averages
-what the model measured and the server judges it (below). The bridge reads the saved goal every ~10 s, so a new
-calibration takes effect without restarting it. Until you calibrate, "goal" is vertical (0 degrees).
+The dashboard no longer has calibration controls. The Camera page uses the upright reference (0 degrees).
+Legacy bridge clients can still read existing saved baselines through the calibration API. Enable
+data collection in dashboard Settings before streaming; otherwise ingest returns HTTP 403.
 
 ## What gets sent (the mapping)
 

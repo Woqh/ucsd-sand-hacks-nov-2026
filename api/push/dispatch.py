@@ -60,7 +60,7 @@ def _send_web(store: Any, user_id: str, title: str, body: str, kind: str) -> dic
     sent = failed = 0
     for s in subs:
         sub = {"endpoint": s["endpoint"], "keys": (s.get("data") or {}).get("keys", {})}
-        ok, status, _ = webpush.send(sub, title, body)
+        ok, status, _ = webpush.send(sub, title, body, url="/receive" if kind == "web_phone" else "/")
         if ok:
             sent += 1
         else:

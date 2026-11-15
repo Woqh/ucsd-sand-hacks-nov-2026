@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import DataConsent from '../components/DataConsent'
 import { api, ApiError } from '../api'
 import { Banner, Button, Card, CardTitle, Meter, Segmented, STATE_META, StatePill, Toggle } from '../components/ui'
 import { FRAME_MAX_SIDE, model, type ModelOutput } from '../model'
-import type { CalibrationBaseline, PairCreateResponse, PostureState } from '../types'
+import type { PairCreateResponse, PostureState } from '../types'
 
 // Laptop camera path: this browser tab reads a webcam (e.g. the iPhone through Camo), hands a frame
 // to the model about once a second (web/src/model.ts) and can post the result to /posture/ingest,
-// standing in for the phone. Frames are drawn to an in-memory canvas and dropped; nothing here
-// uploads an image.
+// standing in for the phone. Frames go only to the local model; dashboard uploads contain readings.
 
 const CAMERA_KEY = 'sitwise.cameraId'
 const DEVICE_TOKEN_KEY = 'sitwise.cameraDeviceToken'
 const FACING_KEY = 'sitwise.cameraFacing'
 const INTERVAL_MS = 1000
-const GOAL_EVERY_TICKS = 10 // re-read the saved goal posture this often, so a recalibration takes effect
-const COUNTDOWN_SEC = 10
-
 type Facing = 'left' | 'right' | 'auto'
-type CalPhase = 'idle' | 'counting' | 'checking' | 'done' | 'rejected'
 
 const load = (k: string): string | null => {
   try {
@@ -158,26 +154,6 @@ export default function Camera() {
   const facingRef = useRef<Facing | ''>(facing)
   facingRef.current = facing
 
-  // The saved goal posture (torso angle). The model measures every reading against it.
-  const [goal, setGoal] = useState<number | null | undefined>(undefined) // undefined = not read yet
-  const goalRef = useRef<number | null>(null)
-  const tickRef = useRef(0)
-
-  const [cal, setCal] = useState<{ phase: CalPhase; left: number; issues: string[]; error?: string }>({ phase: 'idle', left: 0, issues: [] })
-  const calTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  useEffect(() => () => clearInterval(calTimer.current), [])
-
-  const readGoal = useCallback(async () => {
-    try {
-      const { baseline } = await api<{ baseline: CalibrationBaseline | null }>('/calibration')
-      const g = baseline?.goal.torsoAngle
-      goalRef.current = typeof g === 'number' ? g : null
-      setGoal(goalRef.current)
-    } catch {
-      /* keep the last known goal; the next tick tries again */
-    }
-  }, [])
-
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
@@ -286,8 +262,7 @@ export default function Camera() {
         if (!ctx) throw new Error('Canvas is unavailable')
         ctx.drawImage(el, sx, sy, sw, sh, 0, 0, w, h)
         const t = Date.now()
-        if (tickRef.current++ % GOAL_EVERY_TICKS === 0) await readGoal()
-        const result = await model.analyze(ctx.getImageData(0, 0, w, h), t, { facing: facingRef.current || 'auto', goal: goalRef.current })
+        const result = await model.analyze(ctx.getImageData(0, 0, w, h), t, { facing: facingRef.current || 'auto', goal: null })
         setOut(result)
         setModelError(null)
         setFrames((n) => n + 1)
@@ -304,7 +279,12 @@ export default function Camera() {
             setServerState(r.state)
             setSendError(null)
           } catch (e) {
-            if (e instanceof ApiError && e.status === 401) {
+            if (e instanceof ApiError && e.code === 'collection_consent_required') {
+              sendRef.current = false
+              setSend(false)
+              setServerState(null)
+              setSendError(e.message)
+            } else if (e instanceof ApiError && e.status === 401) {
               // Another device was paired since; this tab is no longer "the phone".
               save(DEVICE_TOKEN_KEY, null)
               setSend(false)
@@ -321,17 +301,22 @@ export default function Camera() {
         busyRef.current = false
       }
     }
-    tickRef.current = 0
     tick() // straight away, so the bars are trimmed as soon as the picture appears
     const id = setInterval(tick, INTERVAL_MS)
     return () => clearInterval(id)
-  }, [running, readGoal])
+  }, [running])
 
   async function toggleSend(on: boolean) {
     setSendError(null)
     if (!on) {
+      sendRef.current = false
       setSend(false)
       setServerState(null)
+      return
+    }
+    const { settings } = await api<{ settings: { dataCollectionConsent: boolean } }>('/settings').catch(() => ({ settings: { dataCollectionConsent: false } }))
+    if (!settings.dataCollectionConsent) {
+      setSendError('Please allow data collection above before sending readings.')
       return
     }
     if (load(DEVICE_TOKEN_KEY)) {
@@ -357,44 +342,6 @@ export default function Camera() {
     save(FACING_KEY, f)
   }
 
-  /** Same flow as the Calibrate tab, but here, where the camera is: sit comfortably, hold still for the
-   *  countdown, and the server averages what the model measured from the readings this page sends. */
-  async function startCalibration() {
-    if (!running) return
-    setCal({ phase: 'counting', left: COUNTDOWN_SEC, issues: [] })
-    if (!sendRef.current) await toggleSend(true) // the server can only measure readings it receives
-    let n = COUNTDOWN_SEC
-    clearInterval(calTimer.current)
-    calTimer.current = setInterval(() => {
-      n -= 1
-      setCal((c) => ({ ...c, left: n }))
-      if (n <= 0) {
-        clearInterval(calTimer.current)
-        void finishCalibration()
-      }
-    }, 1000)
-  }
-
-  async function finishCalibration() {
-    setCal((c) => ({ ...c, phase: 'checking' }))
-    try {
-      const baseline = await api<CalibrationBaseline>('/model/calibrate/finish', { method: 'POST' })
-      if (baseline.accepted === false) return setCal({ phase: 'rejected', left: 0, issues: baseline.issues ?? [] })
-      if (baseline.stub) {
-        // No live readings reached the server (a placeholder/stub model, or sending is off): never save mock values as the goal.
-        return setCal({ phase: 'rejected', left: 0, issues: ['The server did not receive live readings from this page, so nothing was saved. Check the model reading above and that sending is on.'] })
-      }
-      const stored = await api<{ baseline: CalibrationBaseline }>('/calibration', { method: 'PUT', body: baseline })
-      const g = stored.baseline.goal.torsoAngle
-      goalRef.current = typeof g === 'number' ? g : null
-      setGoal(goalRef.current)
-      setCal({ phase: 'done', left: 0, issues: [] })
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'posture_not_good') return setCal({ phase: 'rejected', left: 0, issues: e.issues ?? [e.message] })
-      setCal({ phase: 'idle', left: 0, issues: [], error: (e as Error).message })
-    }
-  }
-
   // The preview box takes the shape of the picture inside the frame (bars trimmed), so an upright
   // phone shows as a tall portrait view. (cw x ch) is that picture in feed pixels.
   const vw = info?.w || 16
@@ -411,8 +358,7 @@ export default function Camera() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Camera</h1>
         <p className="mt-1 text-sm text-ink-2">
-          Use a camera on this computer (for example your iPhone through Camo) instead of the iPhone app. Video stays in this tab: frames are
-          analysed in memory and dropped.
+          Use a camera on this computer (for example your iPhone through Camo) instead of the iPhone app. Frames are processed by the local model on this computer and are not stored. Allow data collection below to save posture readings to your dashboard.
         </p>
       </div>
 
@@ -495,10 +441,10 @@ export default function Camera() {
                 {out.note && <p className="text-xs text-ink-2">{out.note}</p>}
                 <div>
                   <div className="mb-1 flex justify-between text-ink-2">
-                    <span>Deviation from goal posture</span>
+                    <span>Deviation from upright posture</span>
                     <span className="text-ink">{out.deviation.toFixed(2)}</span>
                   </div>
-                  <Meter value={Math.min(1, out.deviation)} max={1} label="Deviation from goal posture" />
+                  <Meter value={Math.min(1, out.deviation)} max={1} label="Deviation from upright posture" />
                 </div>
                 <dl className="grid grid-cols-3 gap-2 text-center">
                   {Object.entries(out.features).map(([k, v]) => (
@@ -529,52 +475,7 @@ export default function Camera() {
             {!facing && <p className="mt-2 text-xs text-ink-2">Not chosen yet, so the model is guessing (Auto). Pick Left or Right.</p>}
           </Card>
 
-          <Card>
-            <CardTitle hint={goal === undefined ? undefined : goal === null ? 'not set' : `${goal.toFixed(1)}° from vertical`}>Goal posture</CardTitle>
-            {cal.phase === 'idle' || cal.phase === 'done' || cal.phase === 'rejected' ? (
-              <>
-                <p className="mb-3 text-xs text-ink-2">
-                  {goal == null
-                    ? 'No goal posture yet, so readings are measured against sitting upright. '
-                    : 'Readings are measured against your saved goal posture. '}
-                  Sit the way you want to sit, then hold still while the countdown runs.
-                </p>
-                <Button variant="secondary" onClick={startCalibration} disabled={!running}>
-                  {goal == null ? 'Set my goal posture' : 'Set it again'}
-                </Button>
-                {!running && <span className="ml-3 text-xs text-ink-2">Start the camera first.</span>}
-              </>
-            ) : (
-              <div className="text-center" aria-live="polite">
-                <div className="text-sm text-ink-2">{cal.phase === 'counting' ? 'Hold your best posture' : 'Checking your posture…'}</div>
-                <div className="my-2 text-6xl font-semibold tracking-tight text-ink">{Math.max(0, cal.left)}</div>
-              </div>
-            )}
-            {cal.error && (
-              <div className="mt-3">
-                <Banner tone="error">{cal.error}</Banner>
-              </div>
-            )}
-            {cal.phase === 'done' && (
-              <div className="mt-3">
-                <Banner tone="info">
-                  <strong>Saved.</strong> Slouch alerts now measure against it.
-                </Banner>
-              </div>
-            )}
-            {cal.phase === 'rejected' && (
-              <div className="mt-3" role="alert">
-                <Banner tone="warn">
-                  <strong>That wasn't saved.</strong>
-                  <ul className="mt-1 list-disc pl-5">
-                    {(cal.issues.length ? cal.issues : ['Your posture looked slouched.']).map((i) => (
-                      <li key={i}>{i}</li>
-                    ))}
-                  </ul>
-                </Banner>
-              </div>
-            )}
-          </Card>
+          <DataConsent onChange={(allowed) => { if (!allowed) { sendRef.current = false; setSend(false) } }} />
 
           <Card>
             <div className="flex items-start justify-between gap-4">

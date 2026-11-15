@@ -148,3 +148,16 @@ or risk score**. Instead:
 1. **Calibration trigger:** answered for the webcam bridge (the dashboard's countdown measures the live feed, see above). For the iPhone app, which runs its own stub `calibrate()`, a dashboard-to-phone "recalibrate" request (e.g. a flag in the ingest response) is still not built.
 2. **`label` vs `deviation` precedence** (above).
 3. **Angle conventions and units:** `torsoAngle` is spine/back inclination from vertical, + forward, which the teammate's pipeline confirms (`docs/MEASUREMENTS.md` in their repo). `neckAngle` is their ear-to-shoulder proxy signed forward by the bridge (a projected 2D angle, not a clinical neck angle). `headForwardOffset` is not produced by their model: ask them whether to add it, or drop it from the contract. Their side-view labels are a heuristic angle rule, not a validated classifier.
+
+## Collection consent and external phone setup
+
+`PUT /settings` accepts `dataCollectionConsent` (boolean, default false). `POST /posture/ingest`
+returns HTTP 403 with `collection_consent_required` until the dashboard opts in. Withdrawal stops
+new readings but retains history. This is separate from the per-request Gemini `consent: true`.
+
+`GET /push/phone/status` requires a dashboard token and returns `webPushConfigured`, `receivers`,
+`enabled`, `collectionAllowed`, and `thresholdSec` for setup diagnostics. Receiver tokens cannot
+read this endpoint. See [iPhone alerts](iphone-alerts.md) for registration and physical testing.
+
+Calibration endpoints documented above remain for legacy clients. The dashboard and Camera page
+no longer expose calibration; the camera uses the upright reference.

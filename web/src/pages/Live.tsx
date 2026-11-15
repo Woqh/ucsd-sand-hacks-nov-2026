@@ -33,11 +33,7 @@ export default function Live() {
           The phone hasn't reported {s.device.ageSec == null ? 'yet' : formatAgo(s.device.ageSec)}. Is the app open and monitoring? Showing you as away.
         </Banner>
       )}
-      {!s.calibrated && (
-        <Banner tone="info">
-          You haven't set your goal posture yet. <Link className="font-medium underline" to="/calibration">Calibrate now</Link>
-        </Banner>
-      )}
+
 
       {/* hero: the state, with icon + label so color is never the only signal */}
       <section className={cx('rounded-3xl p-6 sm:p-8', meta.bg)} aria-live="polite">

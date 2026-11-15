@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom'
 import type { CoachPack, Exercise } from '../../types'
 import { FatigueChart, FingerprintBar } from './charts'
 import { ExerciseCard } from './ProfilePanel'
@@ -73,16 +72,10 @@ export default function PatternsPanel({ pack, library }: { pack: CoachPack; libr
           <NotEnough>Needs a few weeks of data to compare.</NotEnough>
         ) : drift.drifting ? (
           <p className="text-sm text-ink">
-            Even when Sitwise calls your posture good, it's sitting a little further from your saved goal than it used to. That can mean your goal no longer matches how you sit.
+            Even when Sitwise calls your posture good, it's sitting a little further from the upright reference than it used to. That can mean your sitting habits have changed.
           </p>
         ) : (
-          <p className="text-sm text-ink-2">Your "good" posture is holding steady against your saved goal.</p>
-        )}
-        {drift.calibrationAgeDays != null && <p className="mt-2 text-xs text-ink-2">Goal saved {drift.calibrationAgeDays} days ago.</p>}
-        {drift.recalibrateSuggested && (
-          <Link to="/calibration" className="mt-3 inline-flex min-h-11 items-center rounded-xl border border-axis px-4 text-sm font-medium text-ink hover:bg-line/50">
-            Redo your goal posture
-          </Link>
+          <p className="text-sm text-ink-2">Your "good" posture is holding steady against the upright reference.</p>
         )}
       </Section>
 

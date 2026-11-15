@@ -14,6 +14,9 @@ export default function Receive() {
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
+    const manifest = document.querySelector<HTMLLinkElement>('link[rel="manifest"]')
+    const previous = manifest?.href
+    if (manifest) manifest.href = `${import.meta.env.BASE_URL}receiver.webmanifest`
     try {
       const saved = localStorage.getItem(TOKEN_KEY)
       setToken(saved)
@@ -21,6 +24,7 @@ export default function Receive() {
     } catch {
       setError('This browser blocked local storage. Allow site data to keep this phone connected.')
     }
+    return () => { if (manifest && previous) manifest.href = previous }
   }, [])
 
   async function pair(event: FormEvent) {
@@ -95,6 +99,19 @@ export default function Receive() {
 
       {error && <Banner tone="error">{error}</Banner>}
       {message && <Banner tone="info">{message}</Banner>}
+
+      <Card>
+        <CardTitle>Set up iPhone vibration alerts</CardTitle>
+        <ol className="list-decimal space-y-2 pl-5 text-sm text-ink-2">
+          <li>Use iOS 16.4 or later. Open this page at your Sitwise HTTPS address in Safari.</li>
+          <li>Choose Share → Add to Home Screen, then open the new Sitwise Alerts icon before pairing.</li>
+          <li>Connect with the dashboard code below, then tap Enable alerts and allow notifications.</li>
+          <li>In iPhone Settings → Sounds &amp; Haptics → Haptics, choose Always Play. Allow Sitwise notifications and check that Focus is not silencing them.</li>
+          <li>On the dashboard, enable phone alerts and use Test phone alert. Confirm the phone actually vibrates.</li>
+        </ol>
+        <p className="mt-3 text-xs text-ink-2">Alerts follow the dashboard's slouch duration, cooldown and quiet hours. iOS controls vibration; this page cannot override your phone's settings.</p>
+        {!window.isSecureContext && <p role="alert" className="mt-3 text-sm text-crit">This connection is not secure. Open the HTTPS version of Sitwise to enable push notifications.</p>}
+      </Card>
 
       {!token ? (
         <Card>

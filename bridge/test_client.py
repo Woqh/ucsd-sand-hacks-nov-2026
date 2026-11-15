@@ -39,6 +39,10 @@ def test_claim_ingest_and_goal_roundtrip(server):
     bridge = Api(server)
     assert bridge.claim(code.lower() + " ")                       # tolerant of case and stray spaces
     assert bridge.goal_torso_angle() is None                      # not calibrated yet
+    with pytest.raises(BridgeError) as denied:
+        bridge.ingest(reading())
+    assert denied.value.code == "collection_consent_required"
+    dash._call("PUT", "/settings", {"dataCollectionConsent": True})
     out = bridge.ingest(reading())
     assert out["state"] in ("GOOD", "AWAY") and out["serverTime"]
     dash._call("PUT", "/calibration", {"goal": {"torsoAngle": 6.5}, "tolerance": 6, "capturedAt": 1_731_672_000_000})

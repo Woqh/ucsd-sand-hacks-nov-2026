@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import DataConsent from '../components/DataConsent'
 import { api, tzOffsetMin } from '../api'
 import { clearToken } from '../auth'
 import { useLocalAlerts } from '../components/AlertWatcher'
@@ -139,13 +139,7 @@ export default function SettingsPage() {
         )}
       </Card>
 
-      <Card>
-        <CardTitle>Goal posture</CardTitle>
-        <p className="mb-3 text-sm text-ink-2">Change how you like to sit? Redo your goal posture any time.</p>
-        <Link to="/calibration" className="inline-flex min-h-11 items-center rounded-xl border border-axis px-4 text-sm font-medium text-ink hover:bg-line/50">
-          Recalibrate
-        </Link>
-      </Card>
+      <DataConsent />
 
       <YourData />
 
@@ -299,6 +293,7 @@ function TestButtons() {
 }
 
 function ReceiverPhone() {
+  const status = usePoll(() => api<{ webPushConfigured: boolean; receivers: number; enabled: boolean; collectionAllowed: boolean; thresholdSec: number }>('/push/phone/status'), 5000)
   const [code, setCode] = useState<{ value: string; expiresAt: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -335,6 +330,15 @@ function ReceiverPhone() {
       <p className="mt-1 text-sm text-ink-2">
         Use Wi-Fi or internet push to receive alerts on a second phone without changing the posture sensor.
       </p>
+      {status.data && <div className="mt-3 space-y-1 text-sm text-ink-2" role="status">
+        <p>{status.data.receivers} phone receiver{status.data.receivers === 1 ? '' : 's'} registered. Alerts trigger after {status.data.thresholdSec} seconds of poor posture.</p>
+        {!status.data.webPushConfigured && <p className="text-crit">Phone web push is not configured on this server. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT, then restart the API.</p>}
+        {!status.data.enabled && <p>Enable the phone alert channel above to receive posture nudges.</p>}
+        {!status.data.collectionAllowed && <p>Allow posture data collection below so the sensor can report posture.</p>}
+      </div>}
+      {status.error && <p className="mt-2 text-sm text-crit">Could not check phone alert setup: {status.error.message}</p>}
+      {(window.location.protocol !== 'https:' || ['localhost', '127.0.0.1'].includes(window.location.hostname)) &&
+        <p className="mt-2 text-sm text-crit">This local address cannot receive push on an external iPhone. Use an HTTPS deployment or HTTPS tunnel reachable from the phone.</p>}
       <Button variant="secondary" className="mt-3" onClick={createCode} disabled={busy}>
         {code ? 'Generate a new setup code' : 'Generate phone setup code'}
       </Button>

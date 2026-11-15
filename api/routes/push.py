@@ -14,6 +14,18 @@ from api.push import dispatch, webpush
 bp = Blueprint("push", __name__)
 
 
+@bp.get("/push/phone/status")
+@dashboard_only
+def phone_status():
+    store = get_store()
+    settings = g.user.get("settings") or {}
+    return {"schema": util.SCHEMA, "webPushConfigured": webpush.configured(),
+            "receivers": len(store.list_push_subscriptions(g.user["id"], "web_phone")),
+            "enabled": settings.get("alertChannels", {}).get("phone", True),
+            "collectionAllowed": settings.get("dataCollectionConsent") is True,
+            "thresholdSec": settings.get("slouchThresholdSec", 30)}
+
+
 @bp.get("/push/web/public-key")
 def web_public_key():
     """Public by design (it's the VAPID *public* key the browser needs to subscribe)."""

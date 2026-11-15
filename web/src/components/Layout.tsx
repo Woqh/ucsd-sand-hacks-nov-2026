@@ -15,7 +15,6 @@ const NAV = [
   { to: '/', label: 'Live', end: true, icon: icon(<path d="M3 12h4l3-8 4 16 3-8h4" />) },
   { to: '/analytics', label: 'Analytics', icon: icon(<path d="M4 20V10M10 20V4M16 20v-8M22 20H2" />) },
   { to: '/coach', label: 'Coach', icon: icon(<><circle cx="12" cy="8" r="3.500" /><path d="M5 21c0-4 3-6.500 7-6.500s7 2.500 7 6.500" /></>) },
-  { to: '/calibration', label: 'Calibrate', icon: icon(<><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="2.500" /></>) },
   { to: '/camera', label: 'Camera', icon: icon(<><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></>) },
   { to: '/settings', label: 'Settings', icon: icon(<><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></>) },
   { to: '/pair', label: 'Pair', icon: icon(<path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1" />) },

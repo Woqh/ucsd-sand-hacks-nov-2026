@@ -16,7 +16,7 @@ bp = Blueprint("dev", __name__)
 
 @bp.post("/dev/seed")
 def seed():
-    """Fill `days` (default 14, max 30) of fake posture history: two weeks so that week-over-week
+    """Fill `days` (default 14, max 90) of fake posture history: two weeks so that week-over-week
     comparisons and the goal card have a "previous week" to compare against.
     With a dashboard token: seeds that user (replacing their history unless reset=false).
     Without one: creates a brand-new demo user and returns its dashboardToken + pairingCode."""
@@ -25,8 +25,8 @@ def seed():
     body = util.json_body(required=False)
     days = body.get("days", 14)
     tz = body.get("tzOffsetMin", 0)
-    if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 30:
-        raise ApiError(400, "bad_request", "days must be an integer 1-30")
+    if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 90:
+        raise ApiError(400, "bad_request", "days must be an integer 1-90")
     if not isinstance(tz, int) or isinstance(tz, bool) or not -840 <= tz <= 840:
         raise ApiError(400, "bad_request", "tzOffsetMin must be an integer")
 
@@ -47,4 +47,8 @@ def seed():
     events = seedgen.generate(days, util.now_ms(), tz, seed=int(body.get("seed", 7)))
     rows = [{**e, "user_id": user["id"]} for e in events]
     store.insert_events(rows)
-    return {"schema": util.SCHEMA, "events": len(rows), "days": days, **extra}
+    # demo pain check-ins (one per week of history) so the "pain vs slouching" view has something to show
+    checkins = seedgen.checkins_from_events(events, util.now_ms(), seed=int(body.get("seed", 7)))
+    for c in checkins:
+        store.add_checkin(user["id"], c["t"], c["pain"], c["area"])
+    return {"schema": util.SCHEMA, "events": len(rows), "days": days, "checkins": len(checkins), **extra}

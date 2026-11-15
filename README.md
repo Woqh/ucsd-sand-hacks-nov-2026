@@ -37,7 +37,7 @@ flask --app api.index run --debug --port 5001
 cd web
 npm run dev
 
-# 3. two weeks of demo data + a fake phone (see "Simulate the phone")
+# 3. six weeks of demo data + a fake phone (see "Simulate the phone")
 python scripts/seed.py               # prints a login link and a pairing code
 python scripts/simulate.py --code <PAIRING_CODE> --loop
 ```
@@ -136,7 +136,7 @@ standard library. Use it to develop and demo the dashboard and alerts without a 
 real model, and as the demo fallback.
 
 1. **Start the API and the dashboard** (Quick start, terminals 1 and 2).
-2. **Get a pairing code.** Either open the dashboard, go to **Pair → Create my dashboard**, or run `python scripts/seed.py` (also fills two weeks of history and prints a login link). Codes last 10 minutes; **Pair → New code** makes another.
+2. **Get a pairing code.** Either open the dashboard, go to **Pair → Create my dashboard**, or run `python scripts/seed.py` (also fills six weeks of history and weekly demo pain check-ins, and prints a login link). Codes last 10 minutes; **Pair → New code** makes another.
 3. **Make nudges quick (optional).** In **Settings**, drag **Slouch threshold** to 5–10 s so you don't wait 30 s.
 4. **Run the simulator** in a new terminal (venv active):
 
@@ -207,6 +207,7 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 | `scripts/` | `seed.py`, `simulate.py`, `init_db.py`, `gen_vapid.py`, `check_codemap.py` |
 | `docs/` | `openapi.yaml`, `api.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
 | `features.md` | Analytics and personalization roadmap, Gemini ideas, and what the health evidence does and doesn't support |
+| `pitch.md` | The pitch: mission, demo flow, Data for Good sources, Tiger Data story, built-vs-next, expected Q&A |
 
 `codemap.md` maps every file for quick navigation (and is what Claude reads first, per `CLAUDE.md`).
 

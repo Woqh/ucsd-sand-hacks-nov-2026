@@ -18,7 +18,10 @@ components:
       properties:
         error:
           type: object
-          properties: { code: { type: string }, message: { type: string } }
+          properties:
+            code: { type: string }
+            message: { type: string }
+            issues: { type: array, items: { type: string }, description: "Structured reasons, e.g. why a posture was refused (posture_not_good)" }
     PostureState: { type: string, enum: [AWAY, GOOD, DEVIATING, SLOUCHING] }
     Features:
       type: object
@@ -41,6 +44,10 @@ components:
     CalibrationBaseline:
       type: object
       required: [goal, tolerance, capturedAt]
+      description: >
+        goal.torsoAngle (REQUIRED) is the spine/back angle used by the calibration gate: trunk inclination from
+        vertical in degrees, 0 upright, positive leaning forward, negative leaning back. Values must be finite numbers.
+        The server refuses a baseline whose back angle is more than 10 degrees from upright in EITHER direction (too far forward or too far back).
       properties:
         schema: { type: integer, enum: [1] }
         goal: { $ref: "#/components/schemas/Features" }
@@ -230,8 +237,8 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/CalibrationBaseline" } } }
       responses:
         "200": { description: "{calibrated, baseline} (accepted/issues are not stored)" }
-        "400": { description: invalid_baseline }
-        "422": { description: "posture_not_good: the baseline had accepted=false; nothing stored" }
+        "400": { description: "invalid_baseline: malformed, non-finite number, or goal.torsoAngle missing" }
+        "422": { description: "posture_not_good (error.issues lists why): the model said accepted=false OR the back angle is outside the allowed range; nothing stored" }
   /metrics:
     get:
       summary: Aggregates for analytics
@@ -241,6 +248,43 @@ paths:
         - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 }, description: "-new Date().getTimezoneOffset()" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Metrics" } } } }
+  /checkins:
+    get:
+      summary: The user's weekly pain check-ins, newest first (max 52)
+      security: [{ dashboardToken: [] }]
+      responses: { "200": { description: "{checkins: [{id, t, pain, area}]}" } }
+    post:
+      summary: Record a weekly pain check-in (server time). Used only for the user's own comparison, never for predictions
+      security: [{ dashboardToken: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pain]
+              properties:
+                pain: { type: integer, minimum: 0, maximum: 10 }
+                area: { type: string, enum: [neck, upper_back, lower_back, shoulders, other], description: optional }
+      responses:
+        "200": { description: "{checkin: {id, t, pain, area}}" }
+        "400": { description: invalid_checkin }
+  /insights/pain:
+    get:
+      summary: Each check-in paired with the share of seated time slouching in the 7 days before it, plus a hedged Spearman rank correlation once there are 5+ weekly points (kept 6+ days apart). A pattern in the user's own data, not a cause
+      security: [{ dashboardToken: [] }]
+      responses:
+        "200":
+          description: >
+            {points: [{t, pain, area, slouchPct|null, seatedSec, used}], lastCheckinAt, nextSuggestedAt,
+            correlation: {enough, n, needed, rho|null, strength: none|modest|stronger|null, direction: positive|negative|null}}
+  /export:
+    get:
+      summary: De-identified weekly aggregates (last 12 weeks) plus check-ins by week. No user id, tokens, device details or timestamps finer than a day. Generated for the user to download; nothing is sent anywhere
+      security: [{ dashboardToken: [] }]
+      parameters:
+        - { name: tzOffsetMin, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: "{kind: sitwise-weekly-export, generated, weeks: [{weekStart, seatedMinutes, goodPct, slouchPct, slouchEpisodes}], checkins: [{weekStart, pain, area}], note}" }
   /push/web/public-key:
     get:
       summary: VAPID public key for the browser (public by design)
@@ -270,8 +314,8 @@ paths:
     post:
       summary: Seed fake history (404 unless ENABLE_DEV_ROUTES=1). No token = create a new demo user.
       requestBody:
-        content: { application/json: { schema: { type: object, properties: { days: { type: integer, default: 14, maximum: 30 }, tzOffsetMin: { type: integer }, reset: { type: boolean, default: true }, seed: { type: integer } } } } }
-      responses: { "200": { description: "{events, days, dashboardToken?, pairingCode?}" } }
+        content: { application/json: { schema: { type: object, properties: { days: { type: integer, default: 14, maximum: 90 }, tzOffsetMin: { type: integer }, reset: { type: boolean, default: true }, seed: { type: integer } } } } }
+      responses: { "200": { description: "{events, days, checkins, dashboardToken?, pairingCode?} (also seeds one demo pain check-in per week of history)" } }
   /model/analyze:
     post:
       summary: "STUB: server-side fallback classification. ?force=slouch returns SLOUCHING"

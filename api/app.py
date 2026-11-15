@@ -8,8 +8,8 @@ from flask import Flask, jsonify
 
 from api import util
 from api.errors import ApiError
-from api.routes import (calibration, dev, metrics, model_stubs, pair, posture, push, settings,
-                        status)
+from api.routes import (calibration, checkins, dev, export, metrics, model_stubs, pair, posture, push,
+                        settings, status)
 
 log = logging.getLogger("sitwise")
 
@@ -20,7 +20,7 @@ def create_app(store: Any = None) -> Flask:
     if store is not None:
         app.config["STORE"] = store  # tests inject a MemoryStore
 
-    for module in (pair, posture, status, settings, calibration, metrics, push, model_stubs, dev):
+    for module in (pair, posture, status, settings, calibration, metrics, checkins, export, push, model_stubs, dev):
         app.register_blueprint(module.bp, url_prefix="/api")
 
     @app.get("/api/health")
@@ -37,7 +37,7 @@ def create_app(store: Any = None) -> Flask:
 
     @app.errorhandler(ApiError)
     def _api_error(e: ApiError):
-        return jsonify({"error": {"code": e.code, "message": e.message}}), e.status
+        return jsonify({"error": {"code": e.code, "message": e.message, **e.extra}}), e.status
 
     @app.errorhandler(404)
     def _not_found(_e):

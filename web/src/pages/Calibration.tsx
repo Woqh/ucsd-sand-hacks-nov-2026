@@ -57,7 +57,7 @@ export default function Calibration() {
       setPhase('done')
       current.refresh()
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'posture_not_good') return reject([e.message])
+      if (e instanceof ApiError && e.code === 'posture_not_good') return reject(e.issues ?? [e.message])
       setError((e as Error).message)
       setPhase('idle')
     }

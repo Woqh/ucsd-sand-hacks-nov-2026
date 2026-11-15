@@ -166,7 +166,7 @@ def daily_breakdown(segs: list[Segment], tz_offset_min: int) -> list[dict[str, A
         d = days[idx]
         seated = d[GOOD] + d[DEVIATING] + d[SLOUCHING]
         pct = good_pct(d[GOOD] + d[DEVIATING], seated)
-        out.append({"date": _date_str(idx), "dayIndex": idx, "seatedSec": round(seated),
+        out.append({"date": date_str(idx), "dayIndex": idx, "seatedSec": round(seated),
                     "goodPct": pct, "score": None if pct is None else int(round(pct))})
     return out
 
@@ -174,7 +174,7 @@ def daily_breakdown(segs: list[Segment], tz_offset_min: int) -> list[dict[str, A
 def fill_days(daily: list[dict[str, Any]], first_idx: int, last_idx: int) -> list[dict[str, Any]]:
     """Ensure one entry per day in [first_idx, last_idx] (empty days have null scores)."""
     by = {d["dayIndex"]: d for d in daily}
-    return [by.get(i, {"date": _date_str(i), "dayIndex": i, "seatedSec": 0, "goodPct": None, "score": None})
+    return [by.get(i, {"date": date_str(i), "dayIndex": i, "seatedSec": 0, "goodPct": None, "score": None})
             for i in range(first_idx, last_idx + 1)]
 
 
@@ -242,6 +242,6 @@ def outlook(score: Optional[int]) -> dict[str, Any]:
     return {"status": status, "thresholdPct": GOOD_THRESHOLD_PCT}
 
 
-def _date_str(day_idx: int) -> str:
+def date_str(day_idx: int) -> str:
     from datetime import date, timedelta
     return (date(1970, 1, 1) + timedelta(days=day_idx)).isoformat()

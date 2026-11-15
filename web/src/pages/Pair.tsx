@@ -54,9 +54,9 @@ export default function Pair() {
     setError(null)
     try {
       if (token) {
-        await api('/dev/seed', { method: 'POST', body: { days: 14, tzOffsetMin: tzOffsetMin() } })
+        await api('/dev/seed', { method: 'POST', body: { days: 42, tzOffsetMin: tzOffsetMin() } })
       } else {
-        const r = await api<{ dashboardToken: string }>('/dev/seed', { method: 'POST', auth: false, body: { days: 14, tzOffsetMin: tzOffsetMin() } })
+        const r = await api<{ dashboardToken: string }>('/dev/seed', { method: 'POST', auth: false, body: { days: 42, tzOffsetMin: tzOffsetMin() } })
         setToken(r.dashboardToken)
       }
       status.refresh()
@@ -142,7 +142,7 @@ export default function Pair() {
         <Card>
           <CardTitle hint={`dev · ${health.data.store} store`}>No phone handy?</CardTitle>
           <p className="mb-3 text-sm text-ink-2">
-            Load two weeks of realistic sample data to explore the dashboard, or run <code className="rounded bg-line/60 px-1">python scripts/simulate.py</code> to
+            Load six weeks of realistic sample data to explore the dashboard, or run <code className="rounded bg-line/60 px-1">python scripts/simulate.py</code> to
             act as the phone.
           </p>
           <Button variant="secondary" onClick={loadDemo} disabled={busy}>

@@ -1,4 +1,4 @@
-# Sitwise (working name)
+# Sitwise
 
 A posture **coach**: an iPhone on your chair watches from the side, a model on the phone classifies
 your posture, and the system nudges you in real time and coaches you over weeks. UCSD SanD Hacks,
@@ -132,19 +132,6 @@ Running the tests against Postgres: start a **local** database and run `TEST_DAT
 
 Works on `http://localhost` and on HTTPS (Chrome, Edge, Firefox). If the page says the server has no VAPID key, step 1 didn't take effect (check `.env` and restart).
 
-**No push keys? You still get a notification while the dashboard is open.** On the **Live** page, press **Turn on alerts** (or Settings → **Notify me in this tab**) and allow notifications. The moment the server sends a slouch nudge, the dashboard shows a browser notification and a banner, in the tone you chose. It respects your threshold, cooldown, quiet hours and the "This computer" switch, because the server decides when to nudge and the page only displays it. It needs the dashboard tab to stay open (a tab in the background for many minutes can be throttled by the browser); for alerts with the tab closed, use the Web Push steps above. If this browser is also subscribed to Web Push, the in-tab notification steps aside so you don't get it twice.
-
-### Add a second iPhone as an alert receiver
-
-The additional iPhone can receive phone-channel alerts over Wi-Fi/internet without replacing the posture-sensing phone. Configure the VAPID keys from the Desktop notifications section above, deploy the dashboard over HTTPS, and:
-
-1. On the dashboard, open **Settings → Connect another iPhone → Generate phone setup code**.
-2. On the receiver iPhone (iOS 16.4+), open the displayed receiver link in Safari, use **Share → Add to Home Screen**, then launch Sitwise from its Home Screen icon.
-3. Enter the one-time code on the receiver page and tap **Enable alerts on this phone**. Allow notifications.
-4. On the dashboard, use **Test phone alert**. The phone-alert setting controls both the paired iPhone and receiver phones.
-
-The receiver gets only permission to register or remove its own notification subscription, not dashboard access. iOS notification settings control whether/how alerts vibrate. This receiver uses Wi-Fi/internet push; it does not use Bluetooth. Disconnect it from the receiver page when no longer needed.
-
 ### iPhone app and push (APNs)
 
 Needs a Mac with Xcode, a **physical iPhone** (the camera), and a paid **Apple Developer** account (push). The app is written but **not yet built**; expect small compile fixes (see [`ios/README.md`](ios/README.md) for the build steps).
@@ -181,17 +168,13 @@ In short:
 1. Keep **Camo Studio** open with the phone connected and upright (closing it makes the feed black).
 2. Start the API, the dashboard and `python scripts/model_server.py`, open **Camera** in Chrome or
    Edge, press **Start camera** and pick the Camo source. The page shows a vertical view.
-3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`, which runs the teammate's
-   **MediaPipe pose model + side-view angle rule** (`posture_pipeline-main/`). Start the model server with the
-   model's Python 3.12 venv: `posture_pipeline-main\.venv\Scripts\python.exe scripts/model_server.py`
-   ([`docs/model-bridge.md`](docs/model-bridge.md) has the one-time setup). With any other Python it serves a
-   placeholder and says why.
-4. Choose **which way you face** (Left or Right) on the page, then **Send readings to the dashboard**: the tab acts as
-   the phone, so the readings go through the model into the database and Live, alerts, analytics and Coach run off
-   them. **Set my goal posture** calibrates from the same feed. It replaces any paired phone.
+3. About once a second a frame goes to `predict()` in `scripts/posture_model.py`. That file is a
+   **placeholder** today (it returns `UNKNOWN`); the PyTorch model goes there.
+4. **Send readings to the dashboard** makes the tab act as the phone, so Live, alerts and analytics
+   run off the feed. It replaces any paired phone.
 
 Frames go from the browser tab to the model server on the same computer, are analysed in memory and
-dropped; the hosted API still accepts no images. Only numbers reach the database.
+dropped; the hosted API still accepts no images.
 
 ## Simulate the phone
 

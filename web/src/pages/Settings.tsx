@@ -109,10 +109,11 @@ export default function SettingsPage() {
       <Card>
         <CardTitle>How to nudge me</CardTitle>
         <div className="space-y-4">
-          <Row title="iPhone" sub="Push notification: your phone vibrates" right={<Toggle label="iPhone alerts" checked={s.alertChannels.phone} onChange={(v) => change({ alertChannels: { phone: v } })} />} />
+          <Row title="Phone" sub="Paired iPhone and any connected phone receivers" right={<Toggle label="Phone alerts" checked={s.alertChannels.phone} onChange={(v) => change({ alertChannels: { phone: v } })} />} />
           <Row title="This computer" sub="Browser notification" right={<Toggle label="Desktop alerts" checked={s.alertChannels.desktop} onChange={(v) => change({ alertChannels: { desktop: v } })} />} />
           <DesktopPush />
           <TestButtons />
+          <ReceiverPhone />
         </div>
       </Card>
 
@@ -244,7 +245,7 @@ function TestButtons() {
           Test desktop alert
         </Button>
         <Button variant="secondary" onClick={() => test('phone')} disabled={busy}>
-          Test iPhone alert
+          Test phone alert
         </Button>
       </div>
       {out && (
@@ -256,9 +257,65 @@ function TestButtons() {
   )
 }
 
+function ReceiverPhone() {
+  const [code, setCode] = useState<{ value: string; expiresAt: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function createCode() {
+    setBusy(true)
+    setError(null)
+    setCopied(false)
+    try {
+      const result = await api<{ code: string; expiresAt: number }>('/push/web/receiver/pairing', { method: 'POST' })
+      setCode({ value: result.code, expiresAt: result.expiresAt })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copyLink() {
+    try {
+      const base = new URL(import.meta.env.BASE_URL, window.location.origin)
+      await navigator.clipboard.writeText(new URL('receive', base).toString())
+      setCopied(true)
+      setError(null)
+    } catch (e) {
+      setError((e as Error).message || 'Could not copy the setup link.')
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-line p-3">
+      <div className="font-medium text-ink">Connect another iPhone</div>
+      <p className="mt-1 text-sm text-ink-2">
+        Use Wi-Fi or internet push to receive alerts on a second phone without changing the posture sensor.
+      </p>
+      <Button variant="secondary" className="mt-3" onClick={createCode} disabled={busy}>
+        {code ? 'Generate a new setup code' : 'Generate phone setup code'}
+      </Button>
+      {code && (
+        <div className="mt-3 rounded-lg bg-line/40 p-3">
+          <p className="text-sm text-ink-2">On the iPhone, open the receiver page, add it to the Home Screen, then enter this one-time code within 10 minutes.</p>
+          <div className="my-2 font-mono text-3xl font-semibold tracking-[0.25em] text-ink">{code.value}</div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <a className="underline" href={`${import.meta.env.BASE_URL}receive`}>Open receiver page</a>
+            <button type="button" className="underline" onClick={copyLink}>{copied ? 'Link copied' : 'Copy receiver link'}</button>
+            <span className="text-ink-2">Expires {new Date(code.expiresAt).toLocaleTimeString()}</span>
+          </div>
+        </div>
+      )}
+      {error && <p className="mt-2 text-sm text-crit" role="alert">{error}</p>}
+    </div>
+  )
+}
+
 const explain = (k: string | null) =>
   k && (({
-    no_device_registered: 'no iPhone has registered for notifications yet',
+    no_device_registered: 'no phone has registered for notifications yet',
     no_browser_subscribed: 'this browser has not subscribed (enable it above)',
     apns_not_configured: 'the server has no APNs key configured',
     vapid_not_configured: 'the server has no VAPID keys configured',

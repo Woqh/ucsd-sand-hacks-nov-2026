@@ -12,6 +12,7 @@ components:
   securitySchemes:
     dashboardToken: { type: http, scheme: bearer, description: "Browser token from POST /pair/create" }
     deviceToken: { type: http, scheme: bearer, description: "Phone token from POST /pair/claim" }
+    receiverToken: { type: http, scheme: bearer, description: "Limited token for an additional phone's web-push subscription" }
   schemas:
     Error:
       type: object
@@ -378,6 +379,31 @@ paths:
       requestBody:
         content: { application/json: { schema: { type: object, properties: { subscription: { type: object } } } } }
       responses: { "200": { description: "{ok}" } }
+  /push/web/receiver/pairing:
+    post:
+      summary: Create a 10-minute code to connect an additional phone as a push-only receiver
+      security: [{ dashboardToken: [] }]
+      responses: { "200": { description: "{code, expiresAt}" } }
+  /push/web/receiver/claim:
+    post:
+      summary: Exchange a one-time receiver code for a limited receiver token
+      requestBody:
+       content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses: { "200": { description: "{receiverToken}" }, "404": { description: "invalid_code" } }
+  /push/web/receiver/subscribe:
+    post:
+      summary: Register the receiver phone's Web Push subscription (does not grant dashboard access)
+      security: [{ receiverToken: [] }]
+      requestBody:
+       content: { application/json: { schema: { type: object, properties: { subscription: { type: object } } } } }
+      responses: { "200": { description: "{ok}" } }
+  /push/web/receiver/unsubscribe:
+    post:
+      summary: Remove the receiver phone's Web Push subscription
+      security: [{ receiverToken: [] }]
+      requestBody:
+       content: { application/json: { schema: { type: object, required: [endpoint], properties: { endpoint: { type: string } } } } }
+      responses: { "200": { description: "{ok}" } }
   /push/apns/register:
     post:
       summary: Save the APNs device token (sandbox flag = dev build)
@@ -387,7 +413,7 @@ paths:
       responses: { "200": { description: "{ok}" } }
   /push/test:
     post:
-      summary: Send a test notification to one channel
+      summary: Send a test notification to the phone (APNs and phone receivers) or desktop channel
       security: [{ dashboardToken: [] }]
       requestBody:
         content: { application/json: { schema: { type: object, required: [channel], properties: { channel: { type: string, enum: [phone, desktop] } } } } }

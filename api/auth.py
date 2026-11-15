@@ -58,3 +58,16 @@ def require_auth(*roles: str) -> Callable:
 dashboard_only = require_auth("dashboard")
 device_only = require_auth("device")
 any_client = require_auth("dashboard", "device")
+
+
+def push_receiver_only(fn: Callable) -> Callable:
+    """Authenticate a receiver-only phone token; it can only manage its own push subscription."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        token_hash = hash_token(bearer_token())
+        user = get_store().get_user_by_push_receiver_hash(token_hash)
+        if user is None:
+            raise ApiError(401, "unauthorized", "Invalid receiver token")
+        g.user, g.role = user, "push_receiver"
+        return fn(*args, **kwargs)
+    return wrapper

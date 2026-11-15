@@ -41,6 +41,7 @@ components:
         deviation: { type: number, minimum: 0, nullable: true, description: "0 = goal posture; higher = worse. The server compares it with the USER's sensitivity" }
         confidence: { type: number, minimum: 0, maximum: 1, default: 1, description: "Below 0.5 is ignored" }
         features: { $ref: "#/components/schemas/Features" }
+        source: { type: string, maxLength: 80, description: "Optional: which model produced this reading (e.g. posture-pipeline/side-angle-rule@0.1.0). Kept with the latest sample; invalid values are ignored" }
     CalibrationBaseline:
       type: object
       required: [goal, tolerance, capturedAt]
@@ -63,6 +64,7 @@ components:
           items: { type: string }
           description: Human-readable reasons when accepted is false (shown to the user). Not stored.
         stub: { type: boolean }
+        source: { type: string, description: "The live model that measured it (present when stub is false)" }
     Settings:
       type: object
       properties:
@@ -408,13 +410,13 @@ paths:
       responses: { "200": { description: '{"status":"started","stub":true}' } }
   /model/calibrate/finish:
     post:
-      summary: "STUB: finish calibration, returns a mock baseline. ?force=bad simulates the model rejecting the posture"
+      summary: "Finish calibration. While a real model is streaming to this account (bridge/), averages the last 10 s of its live readings and judges visibility and steadiness (stub: false); otherwise a STUB mock baseline. ?force=bad always simulates the model rejecting the posture"
       security: [{ dashboardToken: [] }, { deviceToken: [] }]
       parameters:
         - { name: force, in: query, schema: { type: string, enum: [bad] }, description: "bad => accepted=false with issues" }
       responses: { "200": { description: "CalibrationBaseline (with accepted/issues) plus stub: true" } }
   /model/health:
     get:
-      summary: "STUB: is the model service ready?"
+      summary: "Is the model ready? stub is false and live is true only while a real model is streaming to this account"
       security: [{ dashboardToken: [] }, { deviceToken: [] }]
-      responses: { "200": { description: '{"ready":true,"stub":true}' } }
+      responses: { "200": { description: '{ready, stub, live, source|null}' } }

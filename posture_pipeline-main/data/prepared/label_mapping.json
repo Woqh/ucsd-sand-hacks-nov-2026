@@ -1,0 +1,15 @@
+{
+  "labels": [
+    "upright",
+    "leaning_forward",
+    "leaning_back",
+    "leaning_side"
+  ],
+  "source_mapping": {
+    "TUP": "upright",
+    "TLF": "leaning_forward",
+    "TLB": "leaning_back",
+    "TLL": "leaning_side",
+    "TLR": "leaning_side"
+  }
+}

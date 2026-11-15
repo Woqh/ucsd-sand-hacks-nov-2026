@@ -30,6 +30,8 @@ export interface CalibrationBaseline {
   accepted?: boolean
   issues?: string[]
   stub?: boolean
+  /** The live model that measured it (when not a stub). */
+  source?: string
 }
 
 export interface Settings {
@@ -76,7 +78,7 @@ export interface Status {
   deviatingForSec: number | null
   inCooldown: boolean
   alertsSent: number
-  sample: { t: number; label: PostureLabel; deviation: number | null; confidence: number; features: PostureFeatures } | null
+  sample: { t: number; label: PostureLabel; deviation: number | null; confidence: number; features: PostureFeatures; /** which model produced it, if it said */ source?: string } | null
   today: DaySummary
 }
 

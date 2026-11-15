@@ -18,7 +18,9 @@ files = subprocess.run(
     ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
     cwd=ROOT, capture_output=True, text=True, check=True,
 ).stdout.split()
-files = [f for f in files if (ROOT / f).is_file() and (ROOT / f).stat().st_size > 0]
+# The teammate's model repo is vendored whole (data, weights, results): it has its own README and gets ONE row.
+VENDORED = ("posture_pipeline-main/",)
+files = [f for f in files if (ROOT / f).is_file() and (ROOT / f).stat().st_size > 0 and not f.startswith(VENDORED)]
 
 missing = [f for f in files if f not in text]
 

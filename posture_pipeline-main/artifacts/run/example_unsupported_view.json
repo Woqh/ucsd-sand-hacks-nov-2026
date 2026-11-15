@@ -1,0 +1,197 @@
+{
+  "posture_category": null,
+  "class_probabilities": {
+    "upright": 1.7924712665262632e-05,
+    "leaning_forward": 1.255736181704492e-09,
+    "leaning_back": 5.640123958983168e-07,
+    "leaning_side": 0.9999815225601196
+  },
+  "prediction_valid": false,
+  "abstention_reasons": [
+    "Viewpoint 'unknown' is unsupported by this front-view training dataset."
+  ],
+  "raw_prediction": {
+    "posture_category": "leaning_side",
+    "class_probabilities": {
+      "upright": 1.7924712665262632e-05,
+      "leaning_forward": 1.255736181704492e-09,
+      "leaning_back": 5.640123958983168e-07,
+      "leaning_side": 0.9999815225601196
+    },
+    "prediction_valid": false
+  },
+  "smoothed_prediction": {
+    "posture_category": null,
+    "class_probabilities": null,
+    "prediction_valid": false,
+    "window_frames": 1,
+    "maximum_history_age_ms": 500.0,
+    "history_frames": 0,
+    "estimated_delay_ms": 0.0
+  },
+  "measurements": {
+    "torso_inclination_deg": 1.934426164149772,
+    "sagittal_torso_inclination_deg": null,
+    "neck_inclination_deg": null,
+    "hip_flexion_deg": null,
+    "knee_flexion_deg": null,
+    "shoulder_alignment_deg": null,
+    "hip_alignment_deg": null,
+    "lateral_trunk_inclination_deg": null
+  },
+  "measurement_details": {
+    "torso_inclination_deg": {
+      "valid": true,
+      "reason": null,
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint",
+      "selected_body_side": null
+    },
+    "sagittal_torso_inclination_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_anatomical_forward_negative_backward",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint",
+      "selected_body_side": null
+    },
+    "neck_inclination_deg": {
+      "valid": false,
+      "reason": "requires_front_or_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_ear",
+        "right_ear",
+        "left_shoulder",
+        "right_shoulder"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "ipsilateral_shoulder_to_ear",
+      "selected_body_side": null
+    },
+    "hip_flexion_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "right_shoulder",
+        "right_hip",
+        "right_knee"
+      ],
+      "sign_convention": "unsigned_0_straight_to_180_folded",
+      "reference_axis": "adjacent_projected_limb_segments",
+      "proxy": "180_minus_projected_included_joint_angle",
+      "selected_body_side": "right"
+    },
+    "knee_flexion_deg": {
+      "valid": false,
+      "reason": "requires_side_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_hip",
+        "left_knee",
+        "left_ankle"
+      ],
+      "sign_convention": "unsigned_0_straight_to_180_folded",
+      "reference_axis": "adjacent_projected_limb_segments",
+      "proxy": "180_minus_projected_included_joint_angle",
+      "selected_body_side": "left"
+    },
+    "shoulder_alignment_deg": {
+      "valid": false,
+      "reason": "requires_front_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder"
+      ],
+      "sign_convention": "positive_if_image_right_endpoint_is_higher",
+      "reference_axis": "roll_corrected_image_horizontal",
+      "proxy": "bilateral_landmark_line_slope",
+      "selected_body_side": null
+    },
+    "hip_alignment_deg": {
+      "valid": false,
+      "reason": "requires_front_view",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_if_image_right_endpoint_is_higher",
+      "reference_axis": "roll_corrected_image_horizontal",
+      "proxy": "bilateral_landmark_line_slope",
+      "selected_body_side": null
+    },
+    "lateral_trunk_inclination_deg": {
+      "valid": false,
+      "reason": "requires_front_view_bilateral_torso_landmarks",
+      "units": "degrees",
+      "space": "2d_image_projection",
+      "landmarks": [
+        "left_shoulder",
+        "right_shoulder",
+        "left_hip",
+        "right_hip"
+      ],
+      "sign_convention": "positive_toward_image_right",
+      "reference_axis": "roll_corrected_image_vertical",
+      "proxy": "hip_midpoint_to_shoulder_midpoint_frontal_projection",
+      "selected_body_side": null
+    }
+  },
+  "quality": {
+    "pose_confidence": 0.9998016357421875,
+    "pose_confidence_definition": "mean_min_visibility_presence_over_shoulders_and_hips_missing_equals_zero",
+    "viewpoint": "unknown",
+    "viewpoint_source": "operator-supplied; not inferred",
+    "facing": "unknown",
+    "facing_source": "unknown",
+    "facing_reason": null,
+    "camera_roll_deg": 0.0,
+    "camera_roll_source": "upright_camera_assumption",
+    "usable_landmark_count": 33,
+    "landmark_confidence_threshold": 0.5,
+    "warnings": [
+      "Camera roll is assumed zero; use an external vertical reference to calibrate it.",
+      "Lateral trunk inclination is not reliably observable from this view.",
+      "Viewpoint 'unknown' is unsupported by this front-view training dataset."
+    ],
+    "application_domain": "Seated people only; sitting is an operator-checked precondition",
+    "person_count": 1,
+    "valid_joint_fraction": 1.0,
+    "probability_calibration": "Temperature fitted on held-out MultiPosture participants; deployment calibration unverified",
+    "coordinate_spaces": {
+      "classifier": "uncalibrated estimated world landmarks",
+      "measurements": "2D image projections"
+    }
+  },
+  "timestamp_monotonic_s": 117521.578,
+  "latency_ms": {
+    "pose": 267.9906999983359,
+    "geometry_classifier_smoothing": 4.2068000038852915
+  }
+}

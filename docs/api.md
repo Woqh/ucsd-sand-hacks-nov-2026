@@ -45,12 +45,26 @@ Other behaviour worth knowing:
 - `t` is the phone clock. Out-of-order samples are clamped; `t` more than 1 h from server time is rejected (`clock_skew`).
 - Alerts respect quiet hours and the per-channel toggles. Push failures never fail ingest; `alert.channels` reports what happened (`skipped: apns_not_configured`, etc.).
 
+### The real model (webcam bridge)
+
+The teammate's model is a Python/MediaPipe pipeline. It runs next to a camera and posts `PostureSample`s through
+`bridge/` (guide: [`model-bridge.md`](model-bridge.md)), so everything above applies unchanged. How its output
+fills the fields:
+
+- `label`: upright -> `GOOD`; leaning_forward / leaning_back -> `SLOUCHING`; no person -> `AWAY` (confidence 1.0); anything it cannot judge -> `UNKNOWN` (confidence 0.0, so the server ignores it).
+- `features.torsoAngle`: the model's `sagittal_torso_inclination_deg` (degrees from vertical, **+ anatomical forward**). `features.neckAngle`: its ear-to-shoulder inclination signed forward with the camera-facing direction. `headForwardOffset` is **not produced**, so it is omitted (all feature keys are optional).
+- `deviation = abs(torsoAngle - the user's goal torsoAngle) / 25`, clamped to 0..1, so the user's Sensitivity setting maps to degrees: about 15 deg forgiving, 10 deg balanced (the model's own default band), 5 deg strict.
+- `confidence`: the lowest visibility score among the landmarks the angle used.
+- Optional `source` (string, at most 80 printable characters): which model produced the reading, kept with the latest sample and returned in `GET /status` as `sample.source`. Anything invalid is ignored, not an error.
+
+**Live-feed calibration.** The session keeps its last ~30 s of readings (`state.recent`, never returned by the API). While a model has streamed within 15 s, `POST /model/calibrate/finish` averages the last 10 s (`api/core/calibration_feed.py`) and returns `{goal, tolerance, capturedAt, accepted, issues, stub: false, source}`: refused if the person was seen clearly in under 60% of readings (or fewer than 5), or the torso angle varied by more than 3 degrees (standard deviation); the back-angle gate is applied on top. With no live feed it returns the stub baseline (`stub: true`). `GET /model/health` returns `{ready, stub, live, source}`: `stub` is false and `live` true only while a model is streaming. `?force=bad` always returns the stub rejection.
+
 ## Calibration gate: only a good posture is accepted
 
 The goal posture is what every later nudge is measured against, so a slouched "goal" would silently
 break the product. Two checks guard it, and **both must pass** before a baseline is stored:
 
-1. **The interface checks the spine/back angle** (server-side, on every baseline, `api/core/calibration_gate.py`). `goal.torsoAngle` is **required** and must be a finite number. **Convention (flagged: confirm with the model teammate, since it defines the payload):** *trunk (spine/back) inclination from vertical, in degrees; 0 = upright, positive = leaning forward (slouching), negative = reclined against the backrest.* The allowed range is **10° either side of upright (-10° to +10°)**: leaning too far forward (slouching) and leaning too far back are both refused, and the range always brackets 0. The limits are product parameters, not medical thresholds; the 10° forward limit separates the example good (5°) and slouched (18°) values. **Caveat:** ergonomics notes (S5/S6 in `docs/health-claims.md`) describe a slightly reclined back as comfortable, so a 10° backward limit will refuse some comfortable reclined postures. If real users get refused for sitting back, widen `MAX_BACKWARD_LEAN_DEG` (one constant). Tune both against real model output.
+1. **The interface checks the spine/back angle** (server-side, on every baseline, `api/core/calibration_gate.py`). `goal.torsoAngle` is **required** and must be a finite number. **Convention (the teammate's `sagittal_torso_inclination_deg` uses the same one, see `model-bridge.md`):** *trunk (spine/back) inclination from vertical, in degrees; 0 = upright, positive = leaning forward (slouching), negative = reclined against the backrest.* The allowed range is **10° either side of upright (-10° to +10°)**: leaning too far forward (slouching) and leaning too far back are both refused, and the range always brackets 0. The limits are product parameters, not medical thresholds; the 10° forward limit separates the example good (5°) and slouched (18°) values. **Caveat:** ergonomics notes (S5/S6 in `docs/health-claims.md`) describe a slightly reclined back as comfortable, so a 10° backward limit will refuse some comfortable reclined postures. If real users get refused for sitting back, widen `MAX_BACKWARD_LEAN_DEG` (one constant). Tune both against real model output.
 2. **The model's own verdict** (optional, default accepted): the calibration result may carry `accepted` (bool) and `issues` (string[], user-facing reasons). `accepted: false` means "not a good goal posture".
 
 `PUT /calibration` answers **422 `posture_not_good`** with the reasons in `error.issues` (and joined into `error.message`) and stores nothing; a missing or non-finite `torsoAngle` is a 400. `accepted`/`issues` are verdict fields and are never persisted. So a client that forgets to check can't save a bad baseline, and NaN/Infinity (which Python's JSON parser accepts) can't slip past the comparisons.
@@ -126,9 +140,11 @@ or risk score**. Instead:
 | Error bodies may carry `issues` (string[]) | Structured reasons for `posture_not_good`. |
 | `goal.torsoAngle` is now **required** and values must be finite | The calibration gate checks the spine/back angle (convention above, to confirm with the model teammate). |
 | `/model/*` require a token (either kind) | "Validate the token on every route except /pair/*". |
+| `PostureSample.source` (optional) | Which model produced a reading; shown on the Live page and returned with calibration. |
+| `POST /model/calibrate/finish` and `GET /model/health` use the live feed when a model is streaming | The real model isn't on the server; the dashboard's calibration flow measures through the live feed instead of the stub. Response gains `stub: false`, `source`; health gains `live`, `source`. Still stubs when nothing is streaming. |
 
 ## Open contract questions (need a decision)
 
-1. **Calibration trigger:** the real model runs on the phone, so who starts calibration? Today the dashboard runs the guided flow against the server model *stubs*; the phone runs its own. A dashboard-to-phone "recalibrate" request (e.g. a flag in the ingest response) is not built.
+1. **Calibration trigger:** answered for the webcam bridge (the dashboard's countdown measures the live feed, see above). For the iPhone app, which runs its own stub `calibrate()`, a dashboard-to-phone "recalibrate" request (e.g. a flag in the ingest response) is still not built.
 2. **`label` vs `deviation` precedence** (above).
-3. **Angle conventions and units:** `torsoAngle` now has a fixed convention (spine/back inclination from vertical, + forward) because the calibration gate depends on it; confirm it with the model teammate. `neckAngle` / `headForwardOffset` stay the model's, stored unchanged.
+3. **Angle conventions and units:** `torsoAngle` is spine/back inclination from vertical, + forward, which the teammate's pipeline confirms (`docs/MEASUREMENTS.md` in their repo). `neckAngle` is their ear-to-shoulder proxy signed forward by the bridge (a projected 2D angle, not a clinical neck angle). `headForwardOffset` is not produced by their model: ask them whether to add it, or drop it from the contract. Their side-view labels are a heuristic angle rule, not a validated classifier.

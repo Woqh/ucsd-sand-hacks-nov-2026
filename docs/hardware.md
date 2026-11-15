@@ -15,9 +15,16 @@ and rounded-back posture visible; a front-facing webcam mostly can't see it.
 - **Power and screen:** keep the phone plugged in. The monitoring screen disables auto-lock (the app holds the camera and must stay in the foreground); expect warmth and battery drain otherwise.
 - **Light:** even, front-or-side lighting. A strong backlight (window behind the user) hurts pose estimation.
 
+## Webcam alternative (the real model today)
+
+The teammate's model runs on a computer, not in the iPhone app (`docs/model-bridge.md`). A laptop or USB webcam, or a phone
+used as a webcam, clamped to the **side** of the chair and aimed at your profile works the same way: head, shoulders, back
+and hips in frame, level (camera tilt is assumed zero), steady, evenly lit, and **only one person in view**. Set `--facing`
+to where your nose points in the image. The model abstains rather than guessing if it can't see your torso.
+
 ## What leaves the phone
 
-Only numbers: posture features (angles/offsets), a label, a confidence and a timestamp, about once a second. **Camera frames are processed in memory on the phone and dropped; they are never saved, logged or uploaded.** This holds by construction: the API has no field that could carry an image, and the iOS code never serialises frames.
+Only numbers: posture features (angles/offsets), a label, a confidence and a timestamp, about once a second (the webcam bridge sends exactly the same, and refuses to send anything else). **Camera frames are processed in memory on the phone and dropped; they are never saved, logged or uploaded.** This holds by construction: the API has no field that could carry an image, and the iOS code never serialises frames.
 
 ## Alerts on the hardware
 

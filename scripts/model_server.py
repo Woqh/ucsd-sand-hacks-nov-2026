@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Local model server: runs the Python (PyTorch) posture model on frames from the dashboard's
-Camera page. Dev-only, for prototyping the model on a laptop before it moves onto the phone.
+"""Local model server: runs the posture model on frames from the dashboard's Camera page (the iPhone
+through Camo). The dev path for running the real model on a laptop; the iPhone app has its own (stub) model.
 
-  pip install flask opencv-python          # plus torch etc. for the real model
-  python scripts/model_server.py            # listens on http://127.0.0.1:5002
+  posture_pipeline-main\\.venv\\Scripts\\python.exe -m pip install flask     # once, into the model's Python 3.12 venv
+  posture_pipeline-main\\.venv\\Scripts\\python.exe scripts/model_server.py   # listens on http://127.0.0.1:5002
 
 The Camera page finds it automatically (Vite proxies /local-model here) and falls back to the
-stub when it isn't running. The model itself lives in scripts/posture_model.py.
+stub when it isn't running. The model itself sits behind scripts/posture_model.py (the teammate's
+MediaPipe pipeline through bridge/engine.py). With any other Python it serves a placeholder and says why.
 
 Privacy: this listens on 127.0.0.1 only, so frames never leave this computer. Each frame is
 decoded in memory, passed to the model and dropped; nothing is written to disk or logged. The
@@ -52,23 +53,50 @@ def _clean(out: dict) -> dict:
     for k, v in (out.get("features") or {}).items():
         if isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool) and math.isfinite(float(v)):
             features[str(k)] = round(float(v), 4)
-    return {
+    cleaned = {
         "label": label,
         "deviation": round(_num(out.get("deviation"), 0.0, 1e6, 0.0), 4),
         "confidence": round(_num(out.get("confidence"), 0.0, 1.0, 0.0), 4),
         "features": features,
         "stub": bool(posture_model.IS_PLACEHOLDER),
     }
+    for key, limit in (("source", 80), ("note", 160)):     # optional short text; kept printable and bounded
+        v = out.get(key)
+        if isinstance(v, str) and v.strip() and v.isprintable():
+            cleaned[key] = v.strip()[:limit]
+    return cleaned
+
+
+def _options():
+    """Optional query parameters: ?facing=left|right|auto and ?goal=<torso angle, degrees from vertical>."""
+    facing = request.args.get("facing", "auto")
+    if facing not in ("left", "right", "auto"):
+        raise ValueError("facing must be left, right or auto")
+    goal = request.args.get("goal")
+    if goal in (None, "", "null"):
+        return facing, None
+    try:
+        g = float(goal)
+    except ValueError:
+        raise ValueError("goal must be a number")
+    if not math.isfinite(g) or abs(g) >= 90:
+        raise ValueError("goal must be between -90 and 90 degrees")
+    return facing, g
 
 
 @app.get("/health")
 def health():
-    return {"ready": True, "name": posture_model.NAME, "placeholder": bool(posture_model.IS_PLACEHOLDER)}
+    return {"ready": True, "name": posture_model.NAME, "placeholder": bool(posture_model.IS_PLACEHOLDER),
+            "problem": posture_model.PROBLEM}
 
 
 @app.post("/analyze")
 def analyze():
-    """Body: one JPEG or PNG image (the raw bytes, not a form)."""
+    """Body: one JPEG or PNG image (the raw bytes, not a form). Query: facing, goal (see _options)."""
+    try:
+        facing, goal = _options()
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     data = request.get_data(cache=False)
     frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None
     if frame is None:
@@ -76,7 +104,7 @@ def analyze():
     started = time.perf_counter()
     try:
         with _lock:
-            out = _clean(posture_model.predict(frame))
+            out = _clean(posture_model.predict(frame, facing, goal))
     except Exception as exc:  # show the model's error on the Camera page instead of a bare 500
         app.logger.exception("predict() failed")
         return jsonify(error=f"{type(exc).__name__}: {exc}"), 500
@@ -89,7 +117,7 @@ def main() -> None:
     p.add_argument("--port", type=int, default=5002)
     args = p.parse_args()
     posture_model.load()
-    print(f"Model: {posture_model.NAME}" + ("  (placeholder: edit scripts/posture_model.py)" if posture_model.IS_PLACEHOLDER else ""))
+    print(f"Model: {posture_model.NAME}" + ("  (PLACEHOLDER: the real model did not load)" if posture_model.IS_PLACEHOLDER else ""))
     app.run(host="127.0.0.1", port=args.port, threaded=True)
 
 

@@ -1,0 +1,5 @@
+true_label / predicted_label,upright,leaning_forward,leaning_back,leaning_side
+upright,238,3,16,1
+leaning_forward,15,226,0,1
+leaning_back,6,0,124,0
+leaning_side,0,22,25,133

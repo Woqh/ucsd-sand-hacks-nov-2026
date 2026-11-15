@@ -106,6 +106,7 @@ export default function Live() {
                 <Feature k="Torso" v={s.sample.features.torsoAngle} unit="°" />
                 <Feature k="Head fwd" v={s.sample.features.headForwardOffset} />
               </dl>
+              {s.sample.source && <p className="text-xs text-ink-2">Measured by {s.sample.source}</p>}
             </div>
           ) : (
             <p className="text-sm text-ink-2">Nothing live right now.</p>

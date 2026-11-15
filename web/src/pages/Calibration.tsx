@@ -90,7 +90,7 @@ export default function Calibration() {
         <Card>
           <CardTitle>{baseline ? 'Recalibrate' : 'Set your goal posture'}</CardTitle>
           <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-ink-2">
-            <li>Make sure the phone is mounted on the side of your chair.</li>
+            <li>Make sure the camera (your phone, or a webcam running the model bridge) is on the side of your chair and can see you.</li>
             <li>Sit the way you want to sit: back supported, shoulders relaxed, ears over shoulders.</li>
             <li>Hold still while the countdown runs.</li>
           </ol>
@@ -166,7 +166,7 @@ export default function Calibration() {
             ))}
           </dl>
           <p className="mt-3 text-xs text-ink-2">
-            Tolerance ±{baseline.tolerance}. {baseline.stub && 'These are placeholder values from the model stub until the on-device model is connected.'}
+            Tolerance ±{baseline.tolerance}. {baseline.stub && 'These are placeholder values from the model stub. Start the model bridge (or the phone app) first to measure your real posture.'}
           </p>
         </Card>
       )}

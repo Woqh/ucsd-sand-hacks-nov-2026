@@ -4,7 +4,7 @@
   "functions": {
     "index.py": {
       "maxDuration": 45,
-      "excludeFiles": "{web/**,ios/**,docs/**,scripts/**,public/**,api/tests/**,**/test_*.py}"
+      "excludeFiles": "{web/**,ios/**,docs/**,scripts/**,public/**,bridge/**,posture_pipeline-main/**,api/tests/**,**/test_*.py}"
     }
   },
   "rewrites": [

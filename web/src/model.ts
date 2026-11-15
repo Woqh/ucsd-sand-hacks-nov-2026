@@ -5,7 +5,8 @@
 //
 // Two models, picked automatically when the camera starts:
 //   * `pythonModel`: sends the frame to scripts/model_server.py on THIS computer (127.0.0.1), which
-//     runs the PyTorch model in scripts/posture_model.py. Used whenever that server is running.
+//     runs the real model (the teammate's MediaPipe pipeline, via scripts/posture_model.py) with the
+//     facing direction and the user's goal posture. Used whenever that server is running.
 //   * `stubModel`: fixed mock data from the API, used otherwise (and on the hosted site, where no
 //     local server exists; the hosted API takes no images).
 import { api } from './api'
@@ -23,6 +24,18 @@ export interface ModelOutput {
   stub?: boolean
   /** How long the model took, when it reports it. */
   inferenceMs?: number
+  /** Which model measured it (stored with the reading), e.g. posture-pipeline/side-angle-rule@0.1.0. */
+  source?: string
+  /** A short reason when the model can't give a reading (shown on the page, never stored). */
+  note?: string
+}
+
+/** What the model needs to know beyond the picture. */
+export interface AnalyzeOptions {
+  /** Where the person's nose points in the picture. `auto` lets the model guess from face and feet. */
+  facing?: 'left' | 'right' | 'auto'
+  /** The user's calibrated torso angle in degrees (null = not calibrated yet, so vertical). */
+  goal?: number | null
 }
 
 export interface PostureModel {
@@ -30,7 +43,7 @@ export interface PostureModel {
   /** One-time setup (find the server, download weights, warm up). Called when the camera starts. */
   load?(): Promise<void>
   /** `frame` is the current vertical camera view the page shows (RGBA, longest side at most FRAME_MAX_SIDE); `t` is epoch ms. */
-  analyze(frame: ImageData, t: number): Promise<ModelOutput>
+  analyze(frame: ImageData, t: number, opts?: AnalyzeOptions): Promise<ModelOutput>
 }
 
 /** Frames are downscaled so their longest side is this many pixels before the model sees them. */
@@ -61,10 +74,12 @@ async function toJpeg(frame: ImageData): Promise<Blob> {
 /** The Python model on this computer. The frame goes to 127.0.0.1 only and is not stored. */
 export const pythonModel: PostureModel = {
   name: 'Local Python model',
-  async analyze(frame) {
+  async analyze(frame, _t, opts) {
+    const query = new URLSearchParams({ facing: opts?.facing ?? 'auto' })
+    if (opts?.goal != null) query.set('goal', String(opts.goal))
     let res: Response
     try {
-      res = await fetch(`${LOCAL_MODEL}/analyze`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: await toJpeg(frame) })
+      res = await fetch(`${LOCAL_MODEL}/analyze?${query}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: await toJpeg(frame) })
     } catch {
       throw new Error("Can't reach the local model server. Is `python scripts/model_server.py` still running?")
     }
@@ -102,5 +117,5 @@ export const model: PostureModel = {
     activeName = local ? `${pythonModel.name}: ${local}` : stubModel.name
     await active.load?.()
   },
-  analyze: (frame, t) => active.analyze(frame, t),
+  analyze: (frame, t, opts) => active.analyze(frame, t, opts),
 }

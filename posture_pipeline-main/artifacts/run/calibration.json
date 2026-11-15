@@ -1,0 +1,338 @@
+{
+  "split": "calibration",
+  "subjects": [
+    "11",
+    "8"
+  ],
+  "cnn": {
+    "n": 540,
+    "temperature": 0.8195347871392883,
+    "optimizer_success": true,
+    "bounds": [
+      0.05,
+      20.0
+    ],
+    "before": {
+      "nll": 0.09631094098840907,
+      "brier_multiclass_sum": 0.055999322440696844,
+      "ece": 0.01387405352652335,
+      "ece_bins": 10,
+      "reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "count": 1,
+          "mean_confidence": 0.49560756278601126,
+          "accuracy": 0.0
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "count": 23,
+          "mean_confidence": 0.5466276447312141,
+          "accuracy": 0.6086956521739131
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "count": 20,
+          "mean_confidence": 0.651313159808875,
+          "accuracy": 0.6
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "count": 14,
+          "mean_confidence": 0.7454851073869788,
+          "accuracy": 0.8571428571428571
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "count": 14,
+          "mean_confidence": 0.8591674801300135,
+          "accuracy": 0.9285714285714286
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "count": 468,
+          "mean_confidence": 0.9914365594029596,
+          "accuracy": 0.9957264957264957
+        }
+      ]
+    },
+    "after": {
+      "nll": 0.09425507638809763,
+      "brier_multiclass_sum": 0.05505734104779521,
+      "ece": 0.005937735853130805,
+      "ece_bins": 10,
+      "reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "count": 1,
+          "mean_confidence": 0.49821530897615074,
+          "accuracy": 0.0
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "count": 18,
+          "mean_confidence": 0.5441886030725951,
+          "accuracy": 0.5555555555555556
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "count": 16,
+          "mean_confidence": 0.6390452519061469,
+          "accuracy": 0.625
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "count": 16,
+          "mean_confidence": 0.7379360418888745,
+          "accuracy": 0.6875
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "count": 12,
+          "mean_confidence": 0.8426290617665373,
+          "accuracy": 0.9166666666666666
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "count": 477,
+          "mean_confidence": 0.994584056713838,
+          "accuracy": 0.9958071278825996
+        }
+      ]
+    }
+  },
+  "logistic_regression": {
+    "n": 540,
+    "temperature": 1.6115040818340567,
+    "optimizer_success": true,
+    "bounds": [
+      0.05,
+      20.0
+    ],
+    "before": {
+      "nll": 0.14672331768272995,
+      "brier_multiclass_sum": 0.09455078577295548,
+      "ece": 0.039184963111578444,
+      "ece_bins": 10,
+      "reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "count": 5,
+          "mean_confidence": 0.5492802151210017,
+          "accuracy": 0.6
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "count": 4,
+          "mean_confidence": 0.6542909755418896,
+          "accuracy": 0.25
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "count": 13,
+          "mean_confidence": 0.7631214510772645,
+          "accuracy": 0.6153846153846154
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "count": 19,
+          "mean_confidence": 0.856652919889588,
+          "accuracy": 0.631578947368421
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "count": 499,
+          "mean_confidence": 0.9941726110456577,
+          "accuracy": 0.9679358717434869
+        }
+      ]
+    },
+    "after": {
+      "nll": 0.1262533940416708,
+      "brier_multiclass_sum": 0.08307440821300956,
+      "ece": 0.034092053787070475,
+      "ece_bins": 10,
+      "reliability_bins": [
+        {
+          "lower": 0.0,
+          "upper": 0.1,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.1,
+          "upper": 0.2,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.2,
+          "upper": 0.3,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.3,
+          "upper": 0.4,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.4,
+          "upper": 0.5,
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "lower": 0.5,
+          "upper": 0.6,
+          "count": 8,
+          "mean_confidence": 0.5515481970808407,
+          "accuracy": 0.5
+        },
+        {
+          "lower": 0.6,
+          "upper": 0.7,
+          "count": 14,
+          "mean_confidence": 0.6662870143561104,
+          "accuracy": 0.5714285714285714
+        },
+        {
+          "lower": 0.7,
+          "upper": 0.8,
+          "count": 22,
+          "mean_confidence": 0.7531778307018069,
+          "accuracy": 0.6818181818181818
+        },
+        {
+          "lower": 0.8,
+          "upper": 0.9,
+          "count": 31,
+          "mean_confidence": 0.8480052709985099,
+          "accuracy": 0.5161290322580645
+        },
+        {
+          "lower": 0.9,
+          "upper": 1.0,
+          "count": 465,
+          "mean_confidence": 0.9875027320623823,
+          "accuracy": 0.9978494623655914
+        }
+      ]
+    }
+  },
+  "note": "Calibration metrics are fit-split diagnostics. Final calibration quality must be assessed on untouched test subjects."
+}

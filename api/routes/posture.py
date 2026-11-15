@@ -9,12 +9,14 @@ from flask import Blueprint, g
 from api import util
 from api.auth import device_only
 from api.core.settings import SampleError, config_from_settings, parse_sample
-from api.core.state_machine import AWAY, MachineState, step
+from api.core.state_machine import AWAY, MIN_CONFIDENCE, MachineState, step
 from api.db import get_store
 from api.errors import ApiError
 from api.push import dispatch
 
 bp = Blueprint("posture", __name__)
+
+SAMPLE_EVERY_MS = 5_000  # downsample the ~1 Hz feed to one stored reading per 5 s
 
 
 def _event_row(user_id: str, session_id: str, e: dict[str, Any]) -> dict[str, Any]:
@@ -71,9 +73,24 @@ def ingest():
     if rows:
         store.insert_events(rows)
 
+    # Keep at most one posture reading per SAMPLE_EVERY_MS (the `samples` hypertable). The time of the
+    # last stored one rides along in the session's state JSON (the state machine ignores unknown keys).
+    state_dict = new_machine.to_dict()
+    last_stored = int((sess or {}).get("state", {}).get("stored_sample_t") or 0)
+    usable = sample.confidence >= MIN_CONFIDENCE and sample.label != "UNKNOWN"
+    if usable and sample.t - last_stored >= SAMPLE_EVERY_MS:
+        store.insert_samples([{
+            "user_id": user["id"], "session_id": sid, "t": sample.t, "state": new_machine.state,
+            "label": sample.label, "deviation": sample.deviation, "confidence": sample.confidence,
+            "neck": features.get("neckAngle"), "torso": features.get("torsoAngle"),
+            "head_fwd": features.get("headForwardOffset")}])
+        last_stored = sample.t
+    if last_stored:
+        state_dict["stored_sample_t"] = last_stored
+
     store.save_session({
         "id": sid, "user_id": user["id"], "started_at": started_at, "last_t": last_t,
-        "last_seen_server_ms": now, "state": new_machine.to_dict(),
+        "last_seen_server_ms": now, "state": state_dict,
         "last_sample": {"t": sample.t, "label": sample.label, "deviation": sample.deviation,
                         "confidence": sample.confidence, "features": features},
     })

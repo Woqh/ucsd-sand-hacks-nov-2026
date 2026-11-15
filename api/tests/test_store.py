@@ -126,6 +126,51 @@ def test_checkins_add_list_and_clear(store):
     assert store.list_checkins(u["id"]) == [] and len(store.list_checkins(other["id"])) == 1
 
 
+def smp(user, t, state="GOOD", dev=0.1, neck=None, torso=None, head=None, **kw):
+    return {"user_id": user["id"], "session_id": None, "t": t, "state": state, "label": "GOOD",
+            "deviation": dev, "confidence": 0.9, "neck": neck, "torso": torso, "head_fwd": head, **kw}
+
+
+def test_samples_list_rollup_and_clear(store):
+    u, other = mkuser(store, 1), mkuser(store, 2)
+    H = 3_600_000
+    base = (T0 // H) * H                                  # an hour boundary
+    rows = [smp(u, base + 1_000, "GOOD", 0.10, 14.0, 5.0, 0.18), smp(u, base + 2_000, "GOOD", 0.20, 16.0, None, 0.20),
+            smp(u, base + 3_000, "GOOD", 0.30, 18.0, 7.0, None),
+            smp(u, base + 4_000, "SLOUCHING", 0.80, 33.0, 6.0, 0.52),
+            smp(u, base + H + 5_000, "GOOD", 0.15, 15.0, 5.0, 0.19),
+            smp(other, base + 1_000, "GOOD", 0.99, 99.0, 99.0, 9.9)]
+    store.insert_samples(rows)
+    got = store.list_samples(u["id"], base, base + 2 * H)
+    assert [x["t"] for x in got] == [base + 1_000, base + 2_000, base + 3_000, base + 4_000, base + H + 5_000]
+    assert got[1]["torso"] is None and got[3]["state"] == "SLOUCHING" and got[0]["head_fwd"] == 0.18
+    # half-open range, ms exact
+    assert [x["t"] for x in store.list_samples(u["id"], base + 2_000, base + 4_000)] == [base + 2_000, base + 3_000]
+
+    roll = {(r["hour"], r["state"]): r for r in store.sample_rollup(u["id"], base, base + 2 * H)}
+    assert set(roll) == {(base, "GOOD"), (base, "SLOUCHING"), (base + H, "GOOD")}
+    g0 = roll[(base, "GOOD")]
+    assert g0["n"] == 3 and abs(g0["avg_dev"] - 0.2) < 1e-9 and abs(g0["avg_neck"] - 16.0) < 1e-9
+    assert abs(g0["avg_torso"] - 6.0) < 1e-9 and abs(g0["avg_head_fwd"] - 0.19) < 1e-9   # NULLs are ignored
+    assert roll[(base, "SLOUCHING")]["avg_neck"] == 33.0
+
+    store.insert_samples([smp(u, base + 10_000 + i, "GOOD") for i in range(1200)])        # > the 500-row chunk
+    assert len(store.list_samples(u["id"], base, base + 2 * H)) == 5 + 1200
+    store.clear_history(u["id"])
+    assert store.list_samples(u["id"], 0, T0 * 2) == [] and len(store.list_samples(other["id"], 0, T0 * 2)) == 1
+
+
+def test_calibration_history_newest_first(store):
+    u = mkuser(store)
+    b1 = {"schema": 1, "goal": {"torsoAngle": 5.0, "neckAngle": 15.5}, "tolerance": 6.0, "capturedAt": T0}
+    b2 = {**b1, "goal": {"torsoAngle": 3.0, "neckAngle": 14.0}, "capturedAt": T0 + 1000}
+    store.add_calibration(u["id"], T0, b1)
+    store.add_calibration(u["id"], T0 + 86_400_000, b2)
+    hist = store.list_calibrations(u["id"])
+    assert [h["t"] for h in hist] == [T0 + 86_400_000, T0] and hist[0]["baseline"] == b2 and hist[1]["baseline"] == b1
+    assert len(store.list_calibrations(u["id"], limit=1)) == 1
+
+
 def test_ping_ok(store):
     assert store.ping() == (True, None)
 

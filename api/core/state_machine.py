@@ -57,6 +57,8 @@ class Config:
     quiet_start_min: int = 22 * 60    # minutes after local midnight
     quiet_end_min: int = 7 * 60
     tz_offset_min: int = 0            # local = UTC + offset
+    focus_only: bool = False          # nudge ONLY during a focus session the user started
+    focus_until_ms: int = 0           # the active focus session ends at this time (epoch ms; 0 = none)
 
     @property
     def bad_deviation(self) -> float:
@@ -167,6 +169,8 @@ def _alert_due(machine: MachineState, t: int, config: Config) -> bool:
         return False
     if in_quiet_hours(t, config):
         return False
+    if config.focus_only and t > config.focus_until_ms:
+        return False           # focus mode: no nudges outside a focus session
     return not in_cooldown(machine, t, config)
 
 

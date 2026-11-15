@@ -69,6 +69,39 @@ or risk score**. Instead:
 - `GET /insights/pain`: pairs each check-in with the share of seated time spent slouching in the 7 days before it and, once there are **5+ weekly points kept 6+ days apart** (and at least 2 seated hours in each window), a **Spearman rank correlation** with a plain bucket (`none` below 0.3, `modest` below 0.6, else `stronger`). It describes a pattern in *this person's* data. The UI must call it a pattern and not a cause, show n, and call anything under 8 weeks tentative.
 - `GET /export`: de-identified weekly aggregates for the last 12 weeks plus check-ins by week. No user id, tokens, device details or timestamps finer than a day. It is built for the user to preview and download; **nothing is sent anywhere**. A future research-sharing option would have to be opt-in with explicit consent and ethics review; it does not exist.
 
+## Coach: personal analysis, the on-device profile, and optional Gemini
+
+- `GET /coach/insights` returns the **coaching pack**, computed from the user's own last 42 days with **no AI and no
+  identifiers**: fatigue curve (slouch share by minutes since sitting down, and the personal "slip point"), danger
+  hours, onset latency, triggers, **slouch fingerprint** (head-forward vs trunk-lean, from the `samples` table),
+  posture drift against the saved baseline, response to nudges (first/repeat/break prompt, by time of day), recovery
+  trend, alert-fatigue check, suggested settings changes (each is a valid partial `PUT /settings` body), habit
+  strength, bests, relapse and challenge text, break quality, inferred work hours, setup hints, and matched exercises
+  from a vetted library. Plus the full exercise library and `ai: {configured, model}`.
+- The **profile lives only in the browser** (`localStorage`, key `sitwise.profile.v1`). The server has no endpoint that
+  stores it. The dashboard builds an on-device version from the pack with plain rules, so Gemini is optional.
+- Gemini (`POST /coach/analyze`, `/coach/ask`, `/coach/settings-from-text`) needs `consent: true` in the body and a
+  configured `GEMINI_API_KEY` (503 `ai_not_configured` otherwise). What it receives is the de-identified pack from
+  `compact_for_ai` (`GET /coach/preview` shows the exact payload and sends nothing). It never receives pain
+  check-ins, ids, tokens, dates, images or the exercise steps. Outputs are validated against a JSON schema
+  (Gemini ignores length limits, so the server enforces them) and returned to the browser **without being stored**.
+  Per-user limit 6 calls/hour (in-process, so per server instance). Errors never include provider detail
+  (`ai_unavailable`, `ai_bad_output`, `rate_limited`).
+- `settings-from-text` returns a **proposal** (`patch` plus a `changes` diff, validated by the same code as
+  `PUT /settings`). It is never applied here; the dashboard shows the diff and applies it only after the user confirms.
+- **Terms:** use a billing-enabled (paid) Gemini key. Google's terms for the free tier allow using inputs to improve
+  its products and forbid personal or sensitive information. Sitwise sends habit numbers only, but the paid tier is
+  the safe choice. Not medical advice: the prompts forbid it and say to use only the numbers provided.
+- `GET /segments?days=` returns raw posture segments so the dashboard can overlay a calendar `.ics` **locally**: the
+  file is parsed in the browser (times only, never titles or attendees) and is never uploaded.
+- `POST /focus` starts (1-240 min) or stops (0) a focus session; with `settings.focus.onlyDuringFocus` on, nudges only
+  fire while one is running. `settings.nudgeTone` (`gentle|neutral|direct`) changes the notification wording.
+- Ingest now also stores a **downsampled reading** (about one per 5 s, only confident non-UNKNOWN samples, with the
+  features) in the `samples` hypertable, which powers the fingerprint and drift. Frames are never stored: these are the
+  numbers the phone already sends.
+- Assumed feature convention (**confirm with the model teammate**): a larger `neckAngle`, `torsoAngle` and
+  `headForwardOffset` means more forward / worse. The fingerprint and drift read them that way.
+
 ## Status, staleness, metrics
 
 - `GET /status` is polled every ~2 s. Nothing runs in the background on Vercel, so **staleness is computed on read**: no sample for 15 s => `stale: true` and `state: AWAY` (`rawState` keeps the last real state).
@@ -87,6 +120,9 @@ or risk score**. Instead:
 | `POST /pair/create` with a dashboard token | Re-issues a code (pair a new phone) without creating a new user. |
 | `POST /dev/seed` without a token | Creates a new demo user and returns its tokens (dev routes only). |
 | `POST/GET /checkins`, `GET /insights/pain`, `GET /export` | The pain check-in vs slouching view and the downloadable de-identified summary (dashboard token only). |
+| `GET /coach/insights`, `/coach/preview`, `/segments`; `POST /coach/analyze`, `/coach/ask`, `/coach/settings-from-text`, `/focus` | The coaching layer (see the Coach section above). All dashboard-token only. |
+| `settings.nudgeTone`, `settings.focus` | Nudge wording and focus mode. `focus.untilMs` is set by `POST /focus` (server time). |
+| `POST /dev/seed` also returns `samples` | Seeds downsampled readings and an aged calibration so the Coach tab has data. |
 | Error bodies may carry `issues` (string[]) | Structured reasons for `posture_not_good`. |
 | `goal.torsoAngle` is now **required** and values must be finite | The calibration gate checks the spine/back angle (convention above, to confirm with the model teammate). |
 | `/model/*` require a token (either kind) | "Validate the token on every route except /pair/*". |

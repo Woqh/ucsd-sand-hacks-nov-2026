@@ -42,7 +42,13 @@ python scripts/seed.py               # prints a login link and a pairing code
 python scripts/simulate.py --code <PAIRING_CODE> --loop
 ```
 
-Open the link `seed.py` printed. Tests: `pytest api` (pure logic + end-to-end API).
+Open the link `seed.py` printed. Tests: `pytest api` (pure logic + end-to-end API) and, for the dashboard's
+on-device analysis and calendar parsing, `cd web && npm test`. **Run `npm test` from PowerShell or cmd.exe, not Git
+Bash**: vitest fails there on Windows with a path-case error (`Cannot read properties of undefined (reading 'config')`).
+
+**Try the Coach:** open the dashboard's **Coach** tab. With demo data it shows your fatigue curve, how you slouch,
+how you respond to nudges and a coaching profile built on your own device. Add `GEMINI_API_KEY` (see below) to also
+get the optional Gemini version.
 
 ## Configure everything
 
@@ -67,6 +73,7 @@ repo root (copy [`.env.example`](.env.example); it's gitignored, never commit re
 | `DATABASE_URL` | A real database (Tiger Cloud) | Unset = in-memory store. Contains the database password: server-only secret |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop notifications | `python scripts/gen_vapid.py` |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_AUTH_KEY`, `APNS_BUNDLE_ID`, `APNS_USE_SANDBOX` | iPhone notifications | From your Apple Developer account |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional Gemini coaching profile, "ask about your habits", "describe your day" | Unset = those buttons say Gemini isn't on, and the on-device profile still works. **Use a key from a billing-enabled (paid) Google project**: Google's terms for the free tier allow using inputs to improve its products and forbid personal or sensitive data. Default model `gemini-3.5-flash-lite` |
 | `ENABLE_DEV_ROUTES` | Demo seeding + the dashboard's "Load demo data" button | `1` to enable. Leave unset on anything public |
 | `DEV_DB_FILE` | Where the in-memory store saves | Optional. Default `.devdb.json` (delete it to reset local data) |
 
@@ -77,6 +84,26 @@ Not in `.env` (set in the shell): `API_PROXY`, `VITE_BASE` (dashboard, see below
 `{"ok":true,"devRoutes":true,"store":"memory","db":{"ok":true,"problem":null}}`. `store` is `memory` or
 `postgres`; `db.problem` is `schema_missing`, `connect_failed` or `error` when the database check fails;
 `devRoutes` is whether `ENABLE_DEV_ROUTES` took effect.
+
+### Gemini coaching profile (optional)
+
+The **Coach** tab builds a personal profile (how you slouch, when your posture slips, how you respond to nudges, what to
+try next). **Without any key it is built in your browser from your own numbers** and saved only in that browser's
+localStorage; the server never stores it. Setting `GEMINI_API_KEY` adds an "Improve with Gemini" option, plus
+"Ask about your habits" and "Describe your day" (turns a sentence into a settings change you confirm).
+
+What happens when someone uses it: the dashboard first shows the **exact** de-identified payload and a plain-language
+disclosure, and nothing is sent until they tick consent. Gemini receives habit numbers only: no name, email, account
+ID, dates, images or pain check-ins. The result goes back to the browser and is not stored on the server. Calls are
+rate-limited (6 per hour per user, per server instance) and failures fall back to the on-device profile.
+
+- **Paid tier required for real users.** Google's Gemini API terms say that on the free tier, inputs may be used to
+  improve its products and reviewed by humans, and that you must not send personal or sensitive information. Use a key
+  from a billing-enabled project, and re-read the current terms before relying on this.
+- Default model `gemini-3.5-flash-lite`; override with `GEMINI_MODEL`. The Gemini call has a 30 s timeout, so
+  `vercel.json` gives the function 45 s.
+- It has **not been run against the live Gemini API** in this repo (no key was available); the tests use a fake client
+  and the real SDK's config types. Try it once with your key before demoing it.
 
 ### Tiger Cloud database (Tiger Data)
 

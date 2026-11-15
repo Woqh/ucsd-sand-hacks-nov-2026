@@ -113,3 +113,49 @@ def checkins_from_events(events: list[dict[str, Any]], now_ms: int, seed: int = 
             out.append({"t": t, "pain": pain, "area": rng.choice(["neck", "lower_back", "upper_back"])})
         k += 1
     return sorted(out, key=lambda c: c["t"])
+
+
+def samples_from_events(events: list[dict[str, Any]], seed: int = 7, step_s: int = 60) -> list[dict[str, Any]]:
+    """DEMO posture readings (one per `step_s`) consistent with the generated events, so the slouch
+    fingerprint, fatigue, drift and setup-hint features have data. Synthetic: this person slouches
+    mostly head-forward (about 70% of episodes), their neck angle creeps up the longer they sit, and
+    their good posture drifts slightly further from the goal over the weeks."""
+    rng = random.Random(seed + 2)
+    trans = sorted((e for e in events if e["kind"] == "transition"), key=lambda e: e["t"])
+    if not trans:
+        return []
+    first = trans[0]["t"]
+    out: list[dict[str, Any]] = []
+    run_start = first
+    prev_state = AWAY
+    kind = "head"
+    for i, e in enumerate(trans):
+        state = e["to_state"]
+        if prev_state == AWAY and state != AWAY:
+            run_start = e["t"]
+        if state == SLOUCHING and prev_state != SLOUCHING:
+            kind = "head" if rng.random() < 0.7 else "trunk"          # this episode's way of slouching
+        prev_state = state
+        end = trans[i + 1]["t"] if i + 1 < len(trans) else e["t"]
+        if state == AWAY:
+            continue
+        days_in = (e["t"] - first) / DAY
+        t = e["t"] + (step_s * 1000) // 2
+        while t < end:
+            mins = (t - run_start) / MIN
+            fatigue = 0.04 * mins                                        # neck creeps forward the longer they sit
+            drift = 0.002 * ((t - first) / DAY)                          # good posture drifts away from the goal
+            if state == GOOD:
+                row = (0.10 + drift + rng.uniform(-0.04, 0.04), 15 + fatigue + rng.gauss(0, 1.2), 5 + rng.gauss(0, 1.0), 0.18 + rng.gauss(0, 0.015))
+            elif state == DEVIATING:
+                row = (0.45 + rng.uniform(-0.05, 0.05), 22 + rng.gauss(0, 1.5), 9 + rng.gauss(0, 1.0), 0.30 + rng.gauss(0, 0.02))
+            elif kind == "head":
+                row = (0.70 + rng.uniform(-0.06, 0.06), 33 + rng.gauss(0, 2.0), 6 + rng.gauss(0, 1.5), 0.50 + rng.gauss(0, 0.03))
+            else:
+                row = (0.70 + rng.uniform(-0.06, 0.06), 18 + rng.gauss(0, 2.0), 20 + rng.gauss(0, 2.0), 0.22 + rng.gauss(0, 0.02))
+            out.append({"t": int(t), "session_id": None, "state": state,
+                        "label": "SLOUCHING" if state == SLOUCHING else "GOOD", "deviation": round(max(0.0, row[0]), 3),
+                        "confidence": round(min(1.0, 0.9 + rng.uniform(-0.05, 0.05)), 2),
+                        "neck": round(row[1], 2), "torso": round(row[2], 2), "head_fwd": round(max(0.0, row[3]), 3)})
+            t += step_s * 1000
+    return out

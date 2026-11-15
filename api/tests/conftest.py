@@ -29,7 +29,7 @@ def _postgres_store():
 
     from api.db import PostgresStore
     with psycopg.connect(url, autocommit=True, prepare_threshold=None) as c:
-        c.execute("drop table if exists events, sessions, push_subscriptions, users cascade")
+        c.execute("drop table if exists samples, calibrations, checkins, events, sessions, push_subscriptions, users cascade")
         c.execute(SCHEMA)
     return PostgresStore(url)
 
@@ -62,6 +62,13 @@ def all_users(store):
     if hasattr(store, "users"):
         return list(store.users.values())
     return _rows(store, "select * from users")
+
+
+def all_samples(store):
+    if hasattr(store, "samples"):
+        return store.samples
+    return _rows(store, "select user_id, t, session_id, state, label, deviation, confidence, neck, torso, head_fwd "
+                        "from samples order by t")
 
 
 def all_subscriptions(store):

@@ -6,7 +6,7 @@ import pytest
 
 from api import util
 from api.app import create_app
-from api.tests.conftest import all_events, all_subscriptions, all_users
+from api.tests.conftest import all_events, all_samples, all_subscriptions, all_users
 
 T0 = 1_731_672_000_000  # 2024-11-15 12:00:00 UTC
 SID = str(uuid.uuid4())
@@ -233,6 +233,38 @@ def test_calibration_gate_only_accepts_good_posture(env):
     assert client.put("/api/calibration", json={**ok, "accepted": "yes"}, headers=h).status_code == 400
 
 
+def test_ingest_stores_a_downsampled_reading_with_features(env):
+    client, clock, store = env
+    _, dev = paired(client)
+    for _ in range(60):                                   # 60 samples at 1 Hz
+        clock["t"] += 1000
+        r = client.post("/api/posture/ingest", json=sample(clock, "GOOD", 0.1), headers=auth(dev))
+        assert r.status_code == 200
+    rows = all_samples(store)
+    assert 10 <= len(rows) <= 14                          # about one per 5 s, not one per second
+    assert all(r["state"] in ("GOOD", "DEVIATING", "SLOUCHING") and r["neck"] == 15.0 for r in rows)
+    gaps = [b["t"] - a["t"] for a, b in zip(rows, rows[1:])]
+    assert gaps and min(gaps) >= 5000
+    # unusable readings (low confidence / UNKNOWN) are not stored
+    n = len(all_samples(store))
+    clock["t"] += 10_000
+    client.post("/api/posture/ingest", json={**sample(clock), "confidence": 0.1}, headers=auth(dev))
+    clock["t"] += 10_000
+    client.post("/api/posture/ingest", json={**sample(clock, "UNKNOWN", None)}, headers=auth(dev))
+    assert len(all_samples(store)) == n
+
+
+def test_calibration_history_is_recorded_on_every_save(env):
+    client, clock, store = env
+    dash, dev = paired(client)
+    ok = client.post("/api/model/calibrate/finish", headers=auth(dash)).get_json()
+    for _ in range(2):
+        assert client.put("/api/calibration", json=ok, headers=auth(dev)).status_code == 200
+    uid = all_users(store)[0]["id"]
+    hist = store.list_calibrations(uid)
+    assert len(hist) == 2 and hist[0]["baseline"]["goal"]["torsoAngle"] == 5.0
+
+
 def test_back_angle_gate_is_enforced_server_side(env):
     client, clock, _ = env
     dash, dev = paired(client)
@@ -390,3 +422,35 @@ def test_unknown_route_is_json_404(env):
     client, _, _ = env
     r = client.get("/api/nope")
     assert r.status_code == 404 and r.get_json()["error"]["code"] == "not_found"
+
+
+def test_focus_session_endpoint_and_tone_setting(env):
+    client, clock, store = env
+    dash, dev = paired(client)
+    h = auth(dash)
+    s = client.get("/api/settings", headers=h).get_json()["settings"]
+    assert s["nudgeTone"] == "gentle" and s["focus"] == {"onlyDuringFocus": False, "untilMs": 0}
+    assert client.put("/api/settings", json={"nudgeTone": "direct", "focus": {"onlyDuringFocus": True}}, headers=h).status_code == 200
+    r = client.post("/api/focus", json={"minutes": 25}, headers=h).get_json()
+    assert r["focusUntilMs"] == clock["t"] + 25 * 60_000 and r["settings"]["focus"]["untilMs"] == r["focusUntilMs"]
+    assert r["settings"]["nudgeTone"] == "direct" and r["settings"]["focus"]["onlyDuringFocus"] is True    # unrelated fields kept
+    assert client.post("/api/focus", json={"minutes": 0}, headers=h).get_json()["focusUntilMs"] == 0
+    for bad in ({"minutes": -1}, {"minutes": 241}, {"minutes": "25"}, {"minutes": True}, {}):
+        assert client.post("/api/focus", json=bad, headers=h).status_code == 400, bad
+    assert client.post("/api/focus", json={"minutes": 5}, headers=auth(dev)).status_code == 401          # dashboard only
+    assert client.put("/api/settings", json={"nudgeTone": "angry"}, headers=h).status_code == 400
+
+
+def test_focus_mode_gates_alerts_end_to_end(env):
+    client, clock, store = env
+    dash, dev = paired(client)
+    h = auth(dash)
+    client.put("/api/settings", json={"slouchThresholdSec": 5, "focus": {"onlyDuringFocus": True}}, headers=h)
+    feed(client, dev, clock, 2, "GOOD", 0.1)
+    alerts = []
+    for _ in range(8):
+        alerts.append(feed(client, dev, clock, 1, "SLOUCHING", 0.8)["alert"])
+    assert not any(alerts)                                                  # focus mode on, no session: silent
+    client.post("/api/focus", json={"minutes": 10}, headers=h)
+    alerts = [feed(client, dev, clock, 1, "SLOUCHING", 0.8)["alert"] for _ in range(3)]
+    assert any(alerts)                                                      # a session is running: it nudges

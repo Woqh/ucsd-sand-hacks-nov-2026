@@ -163,11 +163,14 @@ export function Segmented<T extends string>({
   options,
   onChange,
   label,
+  dense,
 }: {
   value: T
   options: { value: T; label: string }[]
   onChange: (v: T) => void
   label: string
+  /** Tighter padding on phones, for control rows with many options. */
+  dense?: boolean
 }) {
   return (
     <div role="group" aria-label={label} className="inline-flex rounded-xl border border-line bg-surface p-1">
@@ -177,7 +180,7 @@ export function Segmented<T extends string>({
           type="button"
           aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
-          className={cx('min-h-9 rounded-lg px-4 text-sm font-medium transition', o.value === value ? 'bg-ink text-surface' : 'text-ink-2 hover:bg-line/50')}
+          className={cx('min-h-9 rounded-lg text-sm font-medium transition', dense ? 'px-2.5 sm:px-4' : 'px-4', o.value === value ? 'bg-ink text-surface' : 'text-ink-2 hover:bg-line/50')}
         >
           {o.label}
         </button>

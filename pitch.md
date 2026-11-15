@@ -13,9 +13,11 @@ Most posture apps do one thing: they spot a slouch and buzz you. It has no memor
 round. A phone on your chair watches from the side and measures posture **on the device, so only numbers
 ever leave it**. We learn *your* goal posture, nudge you against a threshold *you* set, and keep a private
 history that turns into insight over weeks: when you slouch, how fast you recover, whether your habits are
-improving, and how your own pain lines up with your own posture. We built it on a time-series database
-(Tiger Data) because posture is a time series, and we grounded the health side in public research, including the
-parts that say *"we don't know yet"*.
+improving, and how your own pain lines up with your own posture. From that history we build a **coaching profile
+that stays in your browser**: how you slouch, when your posture slips, how you respond to nudges, and what to try next.
+We built it on a time-series database (Tiger Data) because posture is a time series, used Gemini to go deeper on what
+coaching works for *you*, and grounded the health side in public research, including the parts that say *"we don't
+know yet"*.
 
 ## The problem
 
@@ -33,6 +35,7 @@ parts that say *"we don't know yet"*.
 | Fixed definition of "bad posture" | You calibrate **your own goal posture**; only a good one is accepted (the spine/back angle must be within 10° of upright, leaning too far forward *or* back is refused) |
 | One alert for everyone | Your slouch threshold, sensitivity, cooldown and quiet hours; gentle escalation, then it stops |
 | Stateless: fires and forgets | A private history: score, streaks, hour-by-weekday heatmap, time-to-recover, week-over-week goals |
+| No idea what works for *you* | A private **coaching profile**: how you slouch (head forward vs leaning), the point in a sit where your posture slips, how fast you respond to each kind of nudge, and a weekly plan. Saved only in your browser |
 | Says nothing about outcomes | Compares *your* weekly pain check-in with *your* slouch data, with the caveats stated |
 | Implied health scare tactics | An evidence meter showing what research does and doesn't show; no made-up predictions |
 | Video to the cloud, or unclear | Frames are analysed on the phone and dropped; the API has no field that could carry an image |
@@ -51,6 +54,9 @@ iPhone on the chair (side view)           Flask API on Vercel             Tiger 
 - **A posture state machine** (GOOD, DEVIATING, SLOUCHING, AWAY) driven by *your* thresholds, written as a pure,
   unit-tested function so it runs on stateless serverless functions.
 - **Alerts:** a push notification on the phone (it vibrates) and a web push on the desktop.
+- **Coaching profile:** the dashboard works out your patterns from your own numbers and builds the profile **on your
+  device**. Optionally, Gemini writes a deeper version from de-identified habit numbers, after you see exactly what
+  would be sent and say yes.
 - **Private by construction:** anonymous pairing code instead of accounts, tokens stored hashed, no third-party
   analytics, and a de-identified export you can inspect and download. Nothing is shared.
 
@@ -65,7 +71,12 @@ iPhone on the chair (side view)           Flask API on Vercel             Tiger 
    to recover, goal and streak.
 4. **Pain & evidence.** The 10-second weekly check-in, "your pain vs your slouching" (a pattern in *your* data,
    explicitly not a cause), the evidence meter, and population context.
-5. **Your data.** A de-identified weekly export that never leaves the device.
+5. **Coach.** The profile built from six weeks of (synthetic) data: "you mostly slouch by letting your head drift
+   forward", "your posture slips after about 110 minutes", "Wednesday around 5 PM is your weakest time", plus how fast
+   you respond to each kind of nudge. (Read the numbers off the screen; they are generated, not real people.)
+   Show the fatigue curve, then **"See what would be sent"** (the exact payload, no ids, dates or pain data) and the
+   consent box before Gemini is ever called. Apply one suggested setting change with a click.
+6. **Your data.** A de-identified weekly export that never leaves the device.
 
 *(The demo history and check-ins are synthetic, generated for the demo and labelled as such.)*
 
@@ -109,37 +120,77 @@ and everything users value is a time-bucketed question: today's score, the hour-
 exposure before a pain rating, week-over-week progress.
 
 **What's built for Tiger Cloud (TimescaleDB)**
-- **`events` is a hypertable**, partitioned by time in weekly chunks, with a compression policy for old chunks.
-  Applying the schema is one command (`python scripts/init_db.py`, idempotent).
+- **`events` and `samples` are hypertables**, partitioned by time (weekly and daily chunks), with compression
+  policies for old chunks and a 90-day retention policy on `samples`. Applying the schema is one command
+  (`python scripts/init_db.py`, idempotent).
+- **`samples`: one posture reading per ~5 s** (deviation, label, neck/torso/head-forward features, never an image).
+  It is what lets the Coach see *how* you slouch and when your posture drifts. The fatigue curve, fingerprint and
+  drift are SQL rollups over it (`date_trunc` hour buckets, the same shape as a continuous aggregate).
 - **Serverless-ready connections.** Vercel functions open many short-lived connections, so the app is designed for
   Tiger's **connection pooler in transaction mode** (small client pool, no prepared statements).
 - **Chunk-friendly queries (by design):** time-range queries filter on the hypertable's time column so Timescale can
   skip chunks that aren't in range.
 - **Verified, not assumed:** the data layer is covered by store-contract tests and a full end-to-end API suite
-  (**152 automated tests**), run against both an in-memory store and a **real Postgres engine**.
+  (**243 Python tests**, plus 25 for the dashboard's on-device analysis), run against both an in-memory store and a
+  **real Postgres engine**.
 
-**What Tiger Data unlocks next (designed, not yet built)**
-- **A `samples` hypertable** (one posture reading per ~5 s) so we can see *how* you slouch (head-forward vs
-  rounded back), your fatigue curve, and posture drift.
-- **Continuous aggregates** for hourly and daily rollups that stay current as data arrives, so the dashboard reads
-  rollups instead of scanning raw rows.
+**What Tiger Data unlocks next (partly built)**
+- **Continuous aggregates:** `samples_hourly` is created (best effort) but **the app still reads the raw table**.
+  Pointing the dashboard at the rollup, so it stays current as data arrives, is the next step.
 - **`time_weight` hyperfunctions** (included on Tiger Cloud) for correct averages over unevenly sampled data, with
   *each user's own threshold applied at query time*, which is personalization done in the database.
 
 **Honest status:** the schema and data layer are tested on standard Postgres. **We have not yet run it on a live
-Tiger Cloud service**, and the hypertable/compression statements are verified only once we do. That is the first
+Tiger Cloud service**, and the hypertable, compression, retention and continuous-aggregate statements are verified
+only once we do. That is the first
 item in our prep checklist below.
+
+## Gemini: what coaching works for *you*, and a profile that stays yours
+
+A detector can't tell you whether its nudges help. Sitwise measures it: after every nudge we record whether and how
+fast you sat back up, then break that down by nudge type, time of day and time in the sit. That becomes a personal
+profile of **your sitting habits, how you respond to coaching, and how best to improve**.
+
+**What the profile contains** (all from your own numbers):
+- *How you slouch:* head drifting forward vs upper body leaning, measured against your own good posture.
+- *When it slips:* your fatigue curve and the minute your posture usually drops, and your weakest weekday and hour.
+- *How you respond:* the share of nudges you fix within 30 s, first vs repeat nudges, morning vs afternoon, whether
+  you are getting faster, and whether you are tuning out (alert fatigue).
+- *What to do:* a weekly plan, exercises matched to how you slouch (from a vetted library), and suggested setting
+  changes you apply with one click. It also suggests the nudge wording (gentle, neutral or direct) that suits you.
+
+**Where Gemini fits.** The dashboard builds this profile **on your device** with plain rules, so it works with no AI.
+Gemini is the "go deeper" option: it reads the de-identified numbers and writes a more tailored analysis (the
+structured result is checked against a JSON schema, and it can only pick exercises from our library, so it cannot
+invent medical advice). Gemini also powers **"Ask about your habits"** (answers only from your numbers and our cited
+facts) and **"Describe your day"** (turns "I work 9 to 6 and hate nudges in meetings" into a settings change you
+review and confirm).
+
+**Why the profile "never leaves your device", and what that does and doesn't mean.**
+- The profile is saved only in your browser's local storage. Our server has **no route that stores it**.
+- Gemini is a cloud service, so using it means habit numbers *do* leave the device, once, and only if you opt in. We
+  show you the **exact payload first** and nothing is sent until you tick consent. It contains no name, email,
+  account ID, dates, images or **pain check-ins**.
+- What comes back is shown to you and saved only in your browser. If Gemini is off, unconfigured or errors, you keep the
+  on-device profile.
+- Google's terms for the free Gemini tier allow using inputs to improve its products and forbid personal or
+  sensitive data, so a real deployment must use a **paid-tier key**. We say so in the app, the README and the docs.
+
+**Honest status:** built and tested with a fake client; **not yet run against the live Gemini API** (we had no key
+when we built it). The on-device profile is what we demo if the API is unavailable.
 
 ## What's built vs. what's next
 
 | Built | Not yet / caveats |
 |---|---|
-| Web dashboard: Live status, Analytics, Pain & evidence, Calibration, Settings, Pairing | iOS app is written but **not yet compiled on a Mac/device** |
-| 20-route API with a unit-tested state machine, per-user alert rules, quiet hours | **On-device pose model is a teammate's and is stubbed** (the interface runs end to end on it) |
+| Web dashboard: Live status, Analytics, Pain & evidence, **Coach**, Calibration, Settings, Pairing | iOS app is written but **not yet compiled on a Mac/device** |
+| 27-route API with a unit-tested state machine, per-user alert rules, quiet hours | **On-device pose model is a teammate's and is stubbed** (the interface runs end to end on it) |
 | Calibration gate (spine/back angle within 10° of upright, plus the model's verdict) | Push notifications not yet tested with real Apple/VAPID credentials |
 | Analytics: score, trend, heatmap, recovery time, goals, streaks, session timeline | Tiger Cloud service not yet connected (tested on plain Postgres) |
 | Pain check-in vs your slouching; evidence meter; cited population context; local export | No data sharing exists (by design, until consent and ethics are in place) |
-| Simulator and seed scripts so everything is demoable without a camera | Adaptive nudging, `samples` hypertable, continuous aggregates, AI weekly coach: **planned** |
+| Coach: fatigue curve, slouch fingerprint, nudge-response analysis, habit strength, exercises, printable report, share card, local calendar overlay | Adaptive nudging **suggests** changes (one-click apply); it doesn't tune itself. Calendar is a local `.ics` import, not a live calendar |
+| Gemini coaching profile, ask-your-habits, describe-your-day (consent, payload preview, on-device fallback) | **Never run on the live Gemini API yet**; needs a paid-tier key. Ask is context-stuffed, not function calling |
+| Simulator and seed scripts so everything is demoable without a camera | Continuous aggregates not yet read by the app; Tiger Cloud not yet connected |
 
 ## Questions we expect
 
@@ -150,6 +201,9 @@ item in our prep checklist below.
   adults, cause not established, and no consensus for back pain*. We show that, rather than a scare.
 - **"Where does my data go?"** Camera frames are analysed on the phone and dropped. Only numeric features and posture
   states are sent, the database holds no images, and any export is de-identified and stays on your device.
+- **"Does Gemini see my data?"** Only if you opt in, and only de-identified habit numbers: no name, email, account
+  ID, dates, images or pain check-ins. You see the exact payload before it is sent. The profile it returns is stored
+  only in your browser. Without Gemini the same profile is built on your device.
 - **"Why Tiger Data?"** Our core data is a time series; hypertables, compression and (next) continuous aggregates
   are the natural fit, and the pooler suits serverless.
 - **"What's real?"** Everything in the demo is real software except the pose model (stubbed) and the demo history and
@@ -158,9 +212,9 @@ item in our prep checklist below.
 ## Where we're going
 
 1. Connect the real on-device model and run on a physical iPhone.
-2. Tiger-native analytics: `samples` hypertable, continuous aggregates, `time_weight`.
-3. Adaptive coaching that learns what works for *you* (nudge timing and channel) and an AI-written weekly summary
-   built only from your aggregated numbers (planned; never from images).
+2. Tiger-native analytics: read the continuous aggregates, use `time_weight`, and run it all on a live Tiger Cloud service.
+3. Adaptive coaching that applies what works for *you* (nudge timing and wording) on its own, with your approval, and
+   a live calendar (read-only, opt-in) instead of a file import.
 4. An opt-in, de-identified research contribution, once consent and ethics review exist.
 
 **Close:** posture apps have been answering "are you slouching right now?" for years. Sitwise answers the question
@@ -175,4 +229,6 @@ that actually changes habits: *"what's true about **your** posture over time, an
 - [ ] Confirm the hackathon track rules (Tiger Data, Data for Good) and tailor the emphasis.
 - [ ] Confirm the `torsoAngle` convention and the 10° range with the model teammate.
 - [ ] Rehearse the demo from `docs/demo-script.md`; keep the simulator as the fallback and a recorded video as backup.
-- [ ] Decide whether to name Gemini: nothing is built, so only mention it as planned.
+- [ ] Get a **billing-enabled** Gemini key, set `GEMINI_API_KEY`, and run the Coach tab's "Improve with Gemini" once end to end. It has **never been run live**; don't claim it on stage until it has. Keep the on-device profile as the fallback.
+- [ ] Re-read Google's current Gemini API terms (free vs paid data use) before the demo.
+- [ ] Confirm the feature convention with the model teammate (larger angle/offset = more forward); the fingerprint and drift depend on it.

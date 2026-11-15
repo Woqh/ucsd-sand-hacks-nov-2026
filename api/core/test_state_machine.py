@@ -214,3 +214,26 @@ def test_describe_reports_time_in_state_and_cooldown():
     d = describe(m, T0 + 20_000, cfg)
     assert d["state"] == SLOUCHING and d["inCooldown"] is True
     assert d["deviatingForSec"] == 19.0
+
+
+def test_focus_mode_only_nudges_inside_a_focus_session():
+    inside = Config(slouch_threshold_sec=5, focus_only=True, focus_until_ms=T0 + 60_000)
+    m, ev = run([good(0)] + [bad(s) for s in range(1, 10)], inside)
+    assert m.state == SLOUCHING and any(e.alert for e in ev)                  # the session is running: nudge
+    expired = Config(slouch_threshold_sec=5, focus_only=True, focus_until_ms=T0)
+    m, ev = run([good(0)] + [bad(s) for s in range(1, 10)], expired)
+    assert m.state == SLOUCHING and not any(e.alert for e in ev)              # state still tracked, no nudge
+    none_started = Config(slouch_threshold_sec=5, focus_only=True)            # focus mode on, no session started
+    assert not any(e.alert for e in run([good(0)] + [bad(s) for s in range(1, 10)], none_started)[1])
+    off = Config(slouch_threshold_sec=5, focus_only=False, focus_until_ms=0)
+    assert any(e.alert for e in run([good(0)] + [bad(s) for s in range(1, 10)], off)[1])
+
+
+def test_a_nudge_held_back_by_focus_mode_fires_when_a_session_starts():
+    # slouching started outside focus; the user starts a session later while still slouching
+    cfg_off = Config(slouch_threshold_sec=5, focus_only=True, focus_until_ms=0)
+    m, ev = run([good(0)] + [bad(s) for s in range(1, 10)], cfg_off)
+    assert not any(e.alert for e in ev)
+    cfg_on = Config(slouch_threshold_sec=5, focus_only=True, focus_until_ms=T0 + 120_000)
+    m, ev = run([bad(s) for s in range(10, 14)], cfg_on, m)
+    assert [(e.kind, e.level) for e in ev if e.alert] == [("alert", 1)]

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, tzOffsetMin } from '../api'
 import { clearToken } from '../auth'
+import NudgeStyleCard from '../components/coach/NudgeStyle'
 import { Banner, Button, Card, CardTitle, Toggle } from '../components/ui'
 import { formatDuration } from '../format'
 import { usePoll } from '../hooks'
@@ -114,6 +115,8 @@ export default function SettingsPage() {
           <TestButtons />
         </div>
       </Card>
+
+      <NudgeStyleCard />
 
       <Card>
         <CardTitle>Quiet hours</CardTitle>

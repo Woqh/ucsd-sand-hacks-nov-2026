@@ -5,10 +5,12 @@ import { useToken } from './hooks'
 import Calibration from './pages/Calibration'
 import Live from './pages/Live'
 import Pair from './pages/Pair'
+import Report from './pages/Report'
 import Settings from './pages/Settings'
 
-// Analytics pulls in the charting library, so it loads on demand and keeps the Live page light.
+// Analytics and Coach pull in the charting library, so they load on demand and keep the Live page light.
 const Analytics = lazy(() => import('./pages/Analytics'))
+const Coach = lazy(() => import('./pages/Coach'))
 
 export default function App() {
   const token = useToken()
@@ -21,6 +23,8 @@ export default function App() {
           <>
             <Route index element={<Live />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/coach" element={<Coach />} />
+            <Route path="/report" element={<Report />} />
             <Route path="/calibration" element={<Calibration />} />
             <Route path="/settings" element={<Settings />} />
           </>

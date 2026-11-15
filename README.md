@@ -132,6 +132,8 @@ Running the tests against Postgres: start a **local** database and run `TEST_DAT
 
 Works on `http://localhost` and on HTTPS (Chrome, Edge, Firefox). If the page says the server has no VAPID key, step 1 didn't take effect (check `.env` and restart).
 
+**No push keys? You still get a notification while the dashboard is open.** On the **Live** page, press **Turn on alerts** (or Settings → **Notify me in this tab**) and allow notifications. The moment the server sends a slouch nudge, the dashboard shows a browser notification and a banner, in the tone you chose. It respects your threshold, cooldown, quiet hours and the "This computer" switch, because the server decides when to nudge and the page only displays it. It needs the dashboard tab to stay open (a tab in the background for many minutes can be throttled by the browser); for alerts with the tab closed, use the Web Push steps above. If this browser is also subscribed to Web Push, the in-tab notification steps aside so you don't get it twice.
+
 ### Add a second iPhone as an alert receiver
 
 The additional iPhone can receive phone-channel alerts over Wi-Fi/internet without replacing the posture-sensing phone. Configure the VAPID keys from the Desktop notifications section above, deploy the dashboard over HTTPS, and:

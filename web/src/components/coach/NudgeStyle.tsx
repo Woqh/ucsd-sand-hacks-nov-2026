@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
+import { messageFor } from '../../alertRules'
 import { usePoll } from '../../hooks'
 import type { Settings, Tone } from '../../types'
 import { Banner, Button, Card, CardTitle, Segmented, Toggle } from '../ui'
 
-// What each tone sounds like (mirrors api/push/dispatch.py MESSAGES_BY_TONE, first-level nudge).
-const SAMPLE: Record<Tone, { title: string; body: string }> = {
-  gentle: { title: 'Sit up tall', body: "You've been slouching a little. Roll your shoulders back and reset." },
-  neutral: { title: 'Posture check', body: "You've been slouching for a bit. Time to sit back up." },
-  direct: { title: 'Sit up.', body: 'Slouching. Back straight, shoulders down.' },
-}
+// What each tone sounds like: the first-level nudge (the wording lives in alertRules.ts, mirroring the server).
+const SAMPLE = (tone: Tone) => messageFor(tone, 1)
 
 const DURATIONS = [25, 45, 90]
 
@@ -58,7 +55,7 @@ export default function NudgeStyleCard({ onChanged }: { onChanged?: () => void }
 
   if (!s) return loaded.error ? <Banner tone="error">{loaded.error.message}</Banner> : null
   const left = Math.max(0, s.focus.untilMs - now)
-  const sample = SAMPLE[s.nudgeTone]
+  const sample = SAMPLE(s.nudgeTone)
 
   return (
     <Card>

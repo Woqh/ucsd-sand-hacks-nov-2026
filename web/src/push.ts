@@ -25,11 +25,12 @@ function urlBase64ToUint8Array(b64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
-/** Ask permission, register /sw.js, subscribe with the server's VAPID key, send it to the API. */
-export async function enableDesktopPush(): Promise<void> {
+async function subscribe(onSubscription: (subscription: PushSubscription) => Promise<void>): Promise<void> {
   if (!supported()) throw new Error("This browser doesn't support web push")
-  const perm = await Notification.requestPermission()
-  if (perm !== 'granted') throw new Error('Notifications were blocked. Allow them in your browser settings.')
+  if (Notification.permission !== 'granted') {
+    const perm = await Notification.requestPermission()
+    if (perm !== 'granted') throw new Error('Notifications were blocked. Allow them in your browser settings.')
+  }
 
   const { publicKey } = await api<{ publicKey: string | null }>('/push/web/public-key', { auth: false })
   if (!publicKey) throw new Error('The server has no VAPID key configured yet (see .env.example).')
@@ -39,5 +40,36 @@ export async function enableDesktopPush(): Promise<void> {
   const sub =
     (await reg.pushManager.getSubscription()) ??
     (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }))
-  await api('/push/web/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } })
+  await onSubscription(sub)
+}
+
+/** Ask permission, register /sw.js, subscribe with the server's VAPID key, and save for this dashboard. */
+export async function enableDesktopPush(): Promise<void> {
+  await subscribe(async (sub) => {
+    await api('/push/web/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } })
+  })
+}
+
+/** Subscribe an additional phone using its limited receiver token (not the dashboard token). */
+export async function enableReceiverPush(receiverToken: string): Promise<void> {
+  await subscribe(async (sub) => {
+    await api('/push/web/receiver/subscribe', {
+      method: 'POST',
+      token: receiverToken,
+      body: { subscription: sub.toJSON() },
+    })
+  })
+}
+
+export async function disableReceiverPush(receiverToken: string): Promise<void> {
+  const reg = 'serviceWorker' in navigator
+    ? await navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)
+    : undefined
+  const sub = await reg?.pushManager.getSubscription()
+  await api('/push/web/receiver/unsubscribe', {
+    method: 'POST',
+    token: receiverToken,
+    body: { endpoint: sub?.endpoint },
+  })
+  if (sub) await sub.unsubscribe()
 }

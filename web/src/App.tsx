@@ -6,6 +6,7 @@ import Calibration from './pages/Calibration'
 import Camera from './pages/Camera'
 import Live from './pages/Live'
 import Pair from './pages/Pair'
+import Receive from './pages/Receive'
 import Report from './pages/Report'
 import Settings from './pages/Settings'
 
@@ -18,6 +19,7 @@ export default function App() {
   return (
     <Suspense fallback={<p className="p-6 text-ink-2">Loading…</p>}>
     <Routes>
+      <Route path="/receive" element={<Receive />} />
       <Route element={<Layout signedIn={!!token} />}>
         <Route path="/pair" element={<Pair />} />
         {token ? (

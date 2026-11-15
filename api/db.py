@@ -240,6 +240,30 @@ class PostgresStore:
         self._exec("delete from push_subscriptions where user_id = %s and kind = %s and endpoint = %s",
                    (user_id, kind, endpoint))
 
+    # ---- receiver-only phone pairing
+    def create_push_receiver_pairing(self, user_id: str, code: str, expires_at: int) -> None:
+        self._exec("delete from push_receiver_pairings where expires_at < %s",
+                   (expires_at - 10 * 60 * 1000,))
+        self._exec("insert into push_receiver_pairings (code, user_id, expires_at) values (%s, %s, %s)",
+                   (code, user_id, expires_at))
+
+    def claim_push_receiver_pairing(self, code: str, now: int) -> Optional[str]:
+        row = self._one("delete from push_receiver_pairings where code = %s and expires_at >= %s "
+                        "returning user_id", (code, now))
+        return row["user_id"] if row else None
+
+    def save_push_receiver_token(self, user_id: str, token_hash: str) -> None:
+        self._exec("insert into push_receiver_tokens (token_hash, user_id) values (%s, %s)",
+                   (token_hash, user_id))
+
+    def get_user_by_push_receiver_hash(self, token_hash: str) -> Optional[dict]:
+        return self._one(f"select {USER_COLS} from users where id = "
+                         "(select user_id from push_receiver_tokens where token_hash = %s)",
+                         (token_hash,))
+
+    def delete_push_receiver_token(self, token_hash: str) -> None:
+        self._exec("delete from push_receiver_tokens where token_hash = %s", (token_hash,))
+
 
 _cached: Any = None
 

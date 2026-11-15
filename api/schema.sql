@@ -59,6 +59,17 @@ create table if not exists push_subscriptions (
   unique (user_id, kind, endpoint)
 );
 
+-- A receiver phone only gets permission to register/remove its own web-push subscription.
+create table if not exists push_receiver_pairings (
+  code        text primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  expires_at  bigint not null
+);
+create table if not exists push_receiver_tokens (
+  token_hash  text primary key,
+  user_id     uuid not null references users(id) on delete cascade
+);
+
 -- Weekly pain check-ins (0-10, optional body area). Compared against the user's OWN slouch exposure
 -- in /api/insights/pain. Never used to predict anything; see docs/health-claims.md.
 create table if not exists checkins (

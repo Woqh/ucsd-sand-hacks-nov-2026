@@ -59,6 +59,18 @@ create table if not exists push_subscriptions (
   unique (user_id, kind, endpoint)
 );
 
+-- Weekly pain check-ins (0-10, optional body area). Compared against the user's OWN slouch exposure
+-- in /api/insights/pain. Never used to predict anything; see docs/health-claims.md.
+create table if not exists checkins (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  t           bigint not null,                      -- epoch ms (server time)
+  pain        smallint not null check (pain between 0 and 10),
+  area        text                                  -- neck | upper_back | lower_back | shoulders | other | null
+);
+create index if not exists checkins_user_t on checkins (user_id, t desc);
+
 -- Tiger Cloud / TimescaleDB: make `events` a hypertable (weekly chunks) and compress old chunks.
 -- Skipped automatically where the extension isn't available. The compression step is best-effort:
 -- TimescaleDB renamed these APIs across versions, so a failure there only prints a notice.

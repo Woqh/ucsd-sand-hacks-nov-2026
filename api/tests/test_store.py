@@ -113,6 +113,19 @@ def test_push_subscriptions_upsert_list_delete(store):
     assert len(store.list_push_subscriptions(u["id"], "web")) == 1
 
 
+def test_checkins_add_list_and_clear(store):
+    u, other = mkuser(store, 1), mkuser(store, 2)
+    a = store.add_checkin(u["id"], T0, 3, "neck")
+    store.add_checkin(u["id"], T0 + 7 * 86_400_000, 5, None)
+    store.add_checkin(other["id"], T0, 9, "lower_back")
+    assert set(a) == {"id", "user_id", "t", "pain", "area"} and a["user_id"] == u["id"] and a["pain"] == 3
+    mine = store.list_checkins(u["id"])
+    assert [c["pain"] for c in mine] == [5, 3] and mine[0]["area"] is None           # newest first
+    assert len(store.list_checkins(u["id"], limit=1)) == 1
+    store.clear_history(u["id"])
+    assert store.list_checkins(u["id"]) == [] and len(store.list_checkins(other["id"])) == 1
+
+
 def test_ping_ok(store):
     assert store.ping() == (True, None)
 

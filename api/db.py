@@ -23,6 +23,7 @@ USER_COLS = ("id, dashboard_token_hash, device_token_hash, pairing_code, pairing
 SESSION_COLS = "id, user_id, started_at, last_t, last_seen_server_ms, state, last_sample"
 EVENT_COLS = "id, user_id, session_id, t, kind, from_state, to_state, alert, level, reason, deviation"
 SUB_COLS = "id, user_id, kind, endpoint, data"
+CHECKIN_COLS = "id, user_id, t, pain, area"
 _USER_UPDATABLE = {"settings", "calibration", "device_token_hash", "pairing_code", "pairing_expires_at"}
 _JSON_COLS = {"settings", "calibration"}
 _EVENT_INSERT_CHUNK = 200  # rows per INSERT (200 x 11 params, far under Postgres' 65535 limit)
@@ -168,7 +169,18 @@ class PostgresStore:
             with conn.transaction():
                 conn.execute("delete from events where user_id = %s", (user_id,))
                 conn.execute("delete from sessions where user_id = %s", (user_id,))
+                conn.execute("delete from checkins where user_id = %s", (user_id,))
         self._run(go)
+
+    # ---- pain check-ins
+    def add_checkin(self, user_id: str, t: int, pain: int, area: Optional[str]) -> dict:
+        return self._one(f"insert into checkins (user_id, t, pain, area) values (%s, %s, %s, %s) "
+                         f"returning {CHECKIN_COLS}", (user_id, t, pain, area))  # type: ignore[return-value]
+
+    def list_checkins(self, user_id: str, limit: int = 100) -> list[dict]:
+        """Newest first."""
+        return self._all(f"select {CHECKIN_COLS} from checkins where user_id = %s order by t desc, id desc limit %s",
+                         (user_id, int(limit)))
 
     # ---- push subscriptions
     def save_push_subscription(self, user_id: str, kind: str, endpoint: str, data: dict) -> None:

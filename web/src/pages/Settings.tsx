@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api'
+import { api, tzOffsetMin } from '../api'
 import { clearToken } from '../auth'
 import { Banner, Button, Card, CardTitle, Toggle } from '../components/ui'
 import { formatDuration } from '../format'
@@ -140,6 +140,8 @@ export default function SettingsPage() {
         </Link>
       </Card>
 
+      <YourData />
+
       <div className="text-center">
         <Button variant="ghost" onClick={clearToken}>
           Forget this browser
@@ -258,3 +260,55 @@ const explain = (k: string | null) =>
     apns_not_configured: 'the server has no APNs key configured',
     vapid_not_configured: 'the server has no VAPID keys configured',
   } as Record<string, string>)[k] ?? k)
+
+/** A de-identified weekly summary of the user's own numbers. Built and downloaded locally; nothing
+ *  is sent anywhere. (If a research-sharing option is ever added it must be opt-in with explicit
+ *  consent and ethics review; this is only the transparent first step.) */
+function YourData() {
+  const [preview, setPreview] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function fetchExport(): Promise<string> {
+    const data = await api<unknown>(`/export?tzOffsetMin=${tzOffsetMin()}`)
+    return JSON.stringify(data, null, 2)
+  }
+
+  async function run(action: 'preview' | 'download') {
+    setBusy(true)
+    setErr(null)
+    try {
+      const text = await fetchExport()
+      if (action === 'preview') return setPreview(text)
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `sitwise-export-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>Your data</CardTitle>
+      <p className="mb-3 text-sm text-ink-2">
+        Download a de-identified summary of your weekly posture numbers and pain check-ins. It has no name, account ID, device details or exact times, and it stays on your device: Sitwise doesn't send it anywhere. If a research-sharing option is ever added, it will be strictly opt-in with its own clear consent.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="secondary" onClick={() => run('preview')} disabled={busy}>
+          Preview
+        </Button>
+        <Button variant="secondary" onClick={() => run('download')} disabled={busy}>
+          Download (JSON)
+        </Button>
+      </div>
+      {err && <p className="mt-2 text-sm text-crit">{err}</p>}
+      {preview && <pre className="mt-3 max-h-64 overflow-auto rounded-lg border border-line bg-line/30 p-3 text-xs text-ink">{preview}</pre>}
+    </Card>
+  )
+}

@@ -24,7 +24,7 @@ def main() -> None:
     p.add_argument("--web", default=None, help="dashboard URL to print in the link (default: Vite dev server, "
                                                "or --base if it's not localhost)")
     p.add_argument("--token", help="existing dashboard token to seed (omit to create a new demo user)")
-    p.add_argument("--days", type=int, default=14, help="days of history (14 = this week + last week)")
+    p.add_argument("--days", type=int, default=42, help="days of history (42 = six weeks: enough for week-over-week and the pain-vs-slouching view)")
     p.add_argument("--tz", type=int, default=None, help="minutes east of UTC (default: this machine's offset)")
     args = p.parse_args()
 

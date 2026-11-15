@@ -233,6 +233,95 @@ def test_calibration_gate_only_accepts_good_posture(env):
     assert client.put("/api/calibration", json={**ok, "accepted": "yes"}, headers=h).status_code == 400
 
 
+def test_back_angle_gate_is_enforced_server_side(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    h = auth(dash)
+
+    def baseline(angle, **kw):
+        return {"schema": 1, "goal": {"neckAngle": 15.0, "torsoAngle": angle, "headForwardOffset": 0.18},
+                "tolerance": 6.0, "capturedAt": clock["t"], **kw}
+
+    # slouched spine/back angle: refused even though the model said accepted: true
+    r = client.put("/api/calibration", json=baseline(18.0, accepted=True), headers=h)
+    err = r.get_json()["error"]
+    assert r.status_code == 422 and err["code"] == "posture_not_good"
+    assert "leaning forward" in err["issues"][0] and "within 10" in err["issues"][0]   # structured reasons
+    assert client.get("/api/calibration", headers=h).get_json()["calibrated"] is False
+    # an upright back and a slight lean either way are fine (the range brackets 0)
+    assert client.put("/api/calibration", json=baseline(-5.0), headers=h).status_code == 200
+    assert client.put("/api/calibration", json=baseline(0.0), headers=auth(dev)).status_code == 200
+    # leaning too far BACK is refused too, not only too far forward
+    r = client.put("/api/calibration", json=baseline(-15.0), headers=h)
+    assert r.status_code == 422 and "leaning back" in r.get_json()["error"]["issues"][0]
+    assert client.put("/api/calibration", json=baseline(-40.0), headers=h).status_code == 422
+    # no back angle measured: can't be checked, so it is refused (not silently accepted)
+    nobody = baseline(5.0)
+    del nobody["goal"]["torsoAngle"]
+    r = client.put("/api/calibration", json=nobody, headers=h)
+    assert r.status_code == 400 and "torsoAngle" in r.get_json()["error"]["message"]
+    # NaN/Infinity parse in Python's json and fail every comparison, so they must be rejected explicitly
+    for bad in ("NaN", "Infinity", "-Infinity"):
+        raw = '{"goal":{"torsoAngle":%s},"tolerance":6,"capturedAt":1731672000000}' % bad
+        r = client.put("/api/calibration", data=raw, content_type="application/json", headers=h)
+        assert r.status_code == 400, bad
+    # the calibrated baseline from before is untouched by all the refusals
+    assert client.get("/api/calibration", headers=h).get_json()["baseline"]["goal"]["torsoAngle"] == 0.0
+
+
+def test_checkins_validation_and_listing(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    h = auth(dash)
+    for bad in ({"pain": 11}, {"pain": -1}, {"pain": "3"}, {"pain": True}, {"pain": 2.5}, {}, {"pain": 3, "area": "knee"}):
+        assert client.post("/api/checkins", json=bad, headers=h).status_code == 400, bad
+    c = client.post("/api/checkins", json={"pain": 4, "area": "neck"}, headers=h).get_json()["checkin"]
+    assert set(c) == {"id", "t", "pain", "area"} and c["t"] == clock["t"] and c["area"] == "neck"
+    clock["t"] += 86_400_000
+    assert client.post("/api/checkins", json={"pain": 6}, headers=h).status_code == 200      # area is optional
+    rows = client.get("/api/checkins", headers=h).get_json()["checkins"]
+    assert [r["pain"] for r in rows] == [6, 4] and rows[0]["area"] is None                    # newest first
+    assert client.post("/api/checkins", json={"pain": 3}, headers=auth(dev)).status_code == 401   # dashboard only
+
+
+def test_pain_insight_needs_enough_weeks_and_is_hedged_data_only(env):
+    client, clock, _ = env
+    # a user with no check-ins: empty, not enough
+    dash, _ = paired(client)
+    empty = client.get("/api/insights/pain", headers=auth(dash)).get_json()
+    assert empty["points"] == [] and empty["correlation"]["enough"] is False and empty["lastCheckinAt"] is None
+
+    # seeded user (42 days of history + one demo check-in per week): enough weeks for a correlation
+    seeded = client.post("/api/dev/seed", json={"days": 42}).get_json()
+    assert seeded["checkins"] >= 5
+    out = client.get("/api/insights/pain", headers=auth(seeded["dashboardToken"])).get_json()
+    corr = out["correlation"]
+    assert corr["enough"] and corr["n"] >= 5 and corr["needed"] == 5
+    assert corr["direction"] == "positive" and corr["rho"] > 0.3 and corr["strength"] in ("modest", "stronger")
+    used = [p for p in out["points"] if p["used"]]
+    assert len(used) == corr["n"] and all(0 <= p["pain"] <= 10 and 0 <= p["slouchPct"] <= 100 for p in used)
+    assert out["nextSuggestedAt"] == out["lastCheckinAt"] + 7 * 86_400_000
+
+
+def test_export_is_deidentified_weekly_aggregates(env):
+    client, clock, store = env
+    seeded = client.post("/api/dev/seed", json={"days": 42}).get_json()
+    h = auth(seeded["dashboardToken"])
+    r = client.get("/api/export", headers=h)
+    body = r.get_json()
+    assert r.status_code == 200 and body["kind"] == "sitwise-weekly-export" and len(body["weeks"]) == 12
+    assert all(set(w) == {"weekStart", "seatedMinutes", "goodPct", "slouchPct", "slouchEpisodes"} for w in body["weeks"])
+    assert any(w["seatedMinutes"] > 0 for w in body["weeks"]) and body["checkins"]
+    assert all(set(c) == {"weekStart", "pain", "area"} for c in body["checkins"])
+    # privacy: nothing identifying, nothing finer than a day
+    text = r.get_data(as_text=True)
+    for user in all_users(store):
+        assert user["id"] not in text and user["dashboard_token_hash"] not in text
+    assert seeded["dashboardToken"] not in text
+    assert all(len(w["weekStart"]) == 10 for w in body["weeks"])                              # YYYY-MM-DD
+    assert client.get("/api/export").status_code == 401
+
+
 def test_push_registration_validation(env):
     client, _, store = env
     dash, dev = paired(client)

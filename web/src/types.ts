@@ -134,3 +134,29 @@ export interface ChannelResult {
   failed: number
   skipped: string | null
 }
+
+export interface PainPoint {
+  t: number
+  pain: number
+  area: string | null
+  /** Share of seated time slouching in the 7 days before this check-in (null = too little data). */
+  slouchPct: number | null
+  seatedSec: number
+  /** Included in the comparison (points are kept 6+ days apart so windows don't overlap). */
+  used: boolean
+}
+
+export interface PainInsight {
+  schema: 1
+  points: PainPoint[]
+  lastCheckinAt: number | null
+  nextSuggestedAt: number | null
+  correlation: {
+    enough: boolean
+    n: number
+    needed: number
+    rho: number | null
+    strength: 'none' | 'modest' | 'stronger' | null
+    direction: 'positive' | 'negative' | null
+  }
+}

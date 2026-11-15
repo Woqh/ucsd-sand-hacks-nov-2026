@@ -9,7 +9,7 @@ Five minutes. Fallback at the bottom if anything misbehaves.
 ENABLE_DEV_ROUTES=1 flask --app api.index run --port 5001
 # 2. dashboard
 cd web && npm run dev
-# 3. seed two weeks of history and get a login link + pairing code
+# 3. seed six weeks of history (+ demo pain check-ins) and get a login link + pairing code
 python scripts/seed.py            # prints  http://localhost:5173/?token=...  and a pairing code
 ```
 
@@ -19,10 +19,11 @@ python scripts/seed.py            # prints  http://localhost:5173/?token=...  an
 ## The pitch
 
 1. **Hook.** "Every posture app just yells at you. Ours learns *your* good posture and helps you improve it over weeks."
-2. **Calibrate.** Dashboard > Calibrate (or on the phone): sit comfortably, countdown, "goal posture saved". "The model runs on the phone."
+2. **Calibrate.** Dashboard > Calibrate (or on the phone): sit comfortably, countdown, "goal posture saved". "The model runs on the phone." Then click **Demo: simulate a slouched posture** (dev builds): it is refused with "Your back is leaning forward about 18° (aim for under 10°)" and nothing is saved. "Only a good posture can become your goal."
 3. **Live.** Slouch past the threshold. Show the **Live** page go *Good -> Drifting (nudge countdown) -> Slouching*, the **phone vibrating** (push) and the **desktop notification** firing. Sit up and show it recover to Good.
 4. **Analytics.** Open **Analytics > Week**: score 80, up 13 vs last week, the trend line climbing, the hour-by-weekday heatmap showing afternoons are the problem, the outlook ("on track"), the goal ("67% -> 70%") and the streak. Mention the earlier days were "at risk".
-5. **Privacy + hardware.** "Nothing but numbers leaves the phone: no video, no photos." Show the side-mounted chair setup (`docs/hardware.md`).
+5. **Pain & evidence.** Analytics > **Pain & evidence**: the 10-second weekly check-in, "your pain vs your slouching" (a pattern in *your* data, not a cause; the demo check-ins are synthetic), the evidence meter ("nobody has shown slouching causes pain"), and the cited population context. Pitch line: "We don't scare you with a made-up 'you'll get arthritis in 10 years'. We show your own data and what the research actually says." Mention Settings > **Your data**: a de-identified export that never leaves the device.
+6. **Privacy + hardware.** "Nothing but numbers leaves the phone: no video, no photos." Show the side-mounted chair setup (`docs/hardware.md`).
 
 ## Fallback
 

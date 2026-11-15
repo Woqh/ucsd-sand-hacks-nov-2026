@@ -6,10 +6,13 @@ const API = '/api'
 export class ApiError extends Error {
   status: number
   code: string
-  constructor(status: number, code: string, message: string) {
+  /** Structured reasons, e.g. why a posture was refused (code `posture_not_good`). */
+  issues?: string[]
+  constructor(status: number, code: string, message: string, issues?: string[]) {
     super(message)
     this.status = status
     this.code = code
+    this.issues = issues
   }
 }
 
@@ -38,10 +41,10 @@ export async function api<T>(path: string, { method = 'GET', body, auth = true }
     /* non-JSON error body */
   }
   if (!res.ok) {
-    const err = (data as { error?: { code?: string; message?: string } } | null)?.error
+    const err = (data as { error?: { code?: string; message?: string; issues?: string[] } } | null)?.error
     // A rejected token means this browser's account is gone (e.g. dev DB reset): sign out.
     if (res.status === 401 && auth && token) clearToken()
-    throw new ApiError(res.status, err?.code ?? 'error', err?.message ?? `Request failed (${res.status})`)
+    throw new ApiError(res.status, err?.code ?? 'error', err?.message ?? `Request failed (${res.status})`, err?.issues)
   }
   return data as T
 }

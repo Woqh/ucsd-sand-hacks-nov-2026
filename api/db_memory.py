@@ -24,6 +24,7 @@ class MemoryStore:
         self.sessions: dict[str, dict] = {}
         self.events: list[dict] = []
         self.subs: list[dict] = []
+        self.checkins: list[dict] = []
         self._next_event_id = 1
         self._next_sub_id = 1
         if path and os.path.exists(path):
@@ -32,6 +33,7 @@ class MemoryStore:
                     d = json.load(f)
                 self.users, self.sessions = d["users"], d["sessions"]
                 self.events, self.subs = d["events"], d["subs"]
+                self.checkins = d.get("checkins", [])
                 self._next_event_id = max([e["id"] for e in self.events], default=0) + 1
                 self._next_sub_id = max([s["id"] for s in self.subs], default=0) + 1
             except Exception:
@@ -43,7 +45,7 @@ class MemoryStore:
         tmp = self._path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"users": self.users, "sessions": self.sessions, "events": self.events,
-                       "subs": self.subs}, f)
+                       "subs": self.subs, "checkins": self.checkins}, f)
         os.replace(tmp, self._path)
 
     def ping(self) -> tuple[bool, Optional[str]]:
@@ -132,7 +134,22 @@ class MemoryStore:
         with self._lock:
             self.events = [e for e in self.events if e["user_id"] != user_id]
             self.sessions = {k: s for k, s in self.sessions.items() if s["user_id"] != user_id}
+            self.checkins = [c for c in self.checkins if c["user_id"] != user_id]
             self._save()
+
+    # ---- pain check-ins
+    def add_checkin(self, user_id: str, t: int, pain: int, area: Optional[str]) -> dict:
+        with self._lock:
+            c = {"id": max([x["id"] for x in self.checkins], default=0) + 1,
+                 "user_id": user_id, "t": t, "pain": pain, "area": area}
+            self.checkins.append(c)
+            self._save()
+            return copy.deepcopy(c)
+
+    def list_checkins(self, user_id: str, limit: int = 100) -> list[dict]:
+        with self._lock:
+            mine = [c for c in self.checkins if c["user_id"] == user_id]
+            return copy.deepcopy(sorted(mine, key=lambda c: (c["t"], c["id"]), reverse=True)[:limit])
 
     # ---- push subscriptions
     def save_push_subscription(self, user_id: str, kind: str, endpoint: str, data: dict) -> None:

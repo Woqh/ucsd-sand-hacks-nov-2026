@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from api.core import insights, scoring
 from api.core.state_machine import AWAY, DEVIATING, GOOD, SLOUCHING
 
 DAY = 86_400_000
@@ -91,3 +92,24 @@ def _block(events: list[dict[str, Any]], rng: random.Random, start: int, end: in
     # close the block: whatever state we were in, they leave
     last = [e for e in events if e["kind"] == "transition"][-1]["to_state"]
     events.append(_ev(end, last, AWAY, reason="left_frame"))
+
+
+def checkins_from_events(events: list[dict[str, Any]], now_ms: int, seed: int = 7) -> list[dict[str, Any]]:
+    """DEMO weekly pain check-ins for the seeded history: one per 7 days going back from now, with pain
+    loosely tracking that week's slouch share plus noise (so the demo has a believable, imperfect
+    relationship to show). Fake data for dev/demo only."""
+    if not events:
+        return []
+    rng = random.Random(seed + 1)
+    first = min(e["t"] for e in events)
+    segs = scoring.build_segments(events, None, first - DAY, now_ms)
+    out: list[dict[str, Any]] = []
+    k = 0
+    while now_ms - k * 7 * DAY - insights.WINDOW_MS >= first:
+        t = now_ms - k * 7 * DAY
+        pct, _seated = insights.slouch_exposure(segs, t)
+        if pct is not None:
+            pain = int(min(10, max(0, round(1.0 + 0.09 * pct + rng.uniform(-1.2, 1.2)))))
+            out.append({"t": t, "pain": pain, "area": rng.choice(["neck", "lower_back", "upper_back"])})
+        k += 1
+    return sorted(out, key=lambda c: c["t"])

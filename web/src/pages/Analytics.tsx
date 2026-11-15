@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { api, tzOffsetMin } from '../api'
 import Heatmap from '../components/charts/Heatmap'
+import { EvidenceMeter, PopulationContext } from '../components/Evidence'
+import PainInsights from '../components/PainInsights'
 import Timeline from '../components/charts/Timeline'
 import TrendChart from '../components/charts/TrendChart'
 import { Banner, Card, CardTitle, Meter, Segmented, Stat, StateIcon, cx } from '../components/ui'
@@ -9,6 +11,11 @@ import { usePoll } from '../hooks'
 import type { Metrics } from '../types'
 
 type Range = Metrics['range']
+type View = 'posture' | 'pain'
+const VIEWS: { value: View; label: string }[] = [
+  { value: 'posture', label: 'Posture' },
+  { value: 'pain', label: 'Pain & evidence' },
+]
 const RANGES: { value: Range; label: string }[] = [
   { value: 'day', label: 'Today' },
   { value: 'week', label: 'Week' },
@@ -28,6 +35,7 @@ const TIPS = [
 ]
 
 export default function Analytics() {
+  const [view, setView] = useState<View>('posture')
   const [range, setRange] = useState<Range>('week')
   const m = usePoll(() => api<Metrics>(`/metrics?range=${range}&tzOffsetMin=${tzOffsetMin()}`), 15000, [range])
   const d = m.data
@@ -38,17 +46,28 @@ export default function Analytics() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Analytics</h1>
         {/* one filter row above everything it scopes */}
-        <Segmented label="Time range" value={range} options={RANGES} onChange={setRange} />
+        <div className="flex flex-wrap gap-2">
+          <Segmented label="View" value={view} options={VIEWS} onChange={setView} />
+          {view === 'posture' && <Segmented label="Time range" value={range} options={RANGES} onChange={setRange} />}
+        </div>
       </div>
 
-      {m.error && <Banner tone="error">{m.error.message}</Banner>}
-      {!d && !m.error && <p className="text-ink-2">Loading…</p>}
+      {view === 'pain' && (
+        <div className="space-y-4">
+          <PainInsights />
+          <EvidenceMeter />
+          <PopulationContext />
+        </div>
+      )}
 
-      {d && (
+      {view === 'posture' && m.error && <Banner tone="error">{m.error.message}</Banner>}
+      {view === 'posture' && !d && !m.error && <p className="text-ink-2">Loading…</p>}
+
+      {view === 'posture' && d && (
         <div className={cx('space-y-4 transition-opacity', stale && 'opacity-60')}>
           <div className="grid gap-4 md:grid-cols-5">
             <ScoreCard d={d} range={range} className="md:col-span-3" />
-            <OutlookCard d={d} className="md:col-span-2" />
+            <OutlookCard d={d} className="md:col-span-2" onEvidence={() => setView('pain')} />
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -124,7 +143,7 @@ function ScoreCard({ d, range, className }: { d: Metrics; range: Range; classNam
   )
 }
 
-function OutlookCard({ d, className }: { d: Metrics; className?: string }) {
+function OutlookCard({ d, className, onEvidence }: { d: Metrics; className?: string; onEvidence: () => void }) {
   const s = d.outlook.status
   return (
     <Card className={className}>
@@ -144,12 +163,17 @@ function OutlookCard({ d, className }: { d: Metrics; className?: string }) {
           <div>
             <div className="font-semibold text-ink">Room to improve</div>
             <p className="mt-1 text-sm text-ink-2">
-              Sustained slouching is associated with neck and back pain risk over the years. Small, steady improvements add up.
+              Poor sitting posture is linked with neck discomfort in some studies, but research hasn't shown that it causes pain. Moving regularly is still a good habit.
             </p>
           </div>
         </div>
       )}
       {s === 'no_data' && <p className="text-sm text-ink-2">Sit with Sitwise running for a bit and your outlook will show up here.</p>}
+      {s !== 'no_data' && (
+        <button type="button" onClick={onEvidence} className="mt-3 text-sm font-medium text-accent underline">
+          What does the research say?
+        </button>
+      )}
       <p className="mt-3 border-t border-line pt-3 text-xs text-ink-2">
         Illustrative and educational only. Not medical advice. Talk to a clinician about pain or health concerns.
       </p>

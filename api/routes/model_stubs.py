@@ -8,6 +8,7 @@ from flask import Blueprint, request
 
 from api import util
 from api.auth import any_client
+from api.core.calibration_gate import back_angle_issues
 
 bp = Blueprint("model_stubs", __name__)
 
@@ -46,24 +47,14 @@ def calibrate_finish():
     """Returns a mock baseline. `?force=bad` simulates the model REJECTING the captured posture
     (`accepted: false` + `issues`) so the calibration gate and its UI can be tested end to end."""
     if request.args.get("force") == "bad":
-        return {
-            "schema": util.SCHEMA,
-            "goal": STUB_FEATURES_SLOUCH,           # what it measured: a slouched posture
-            "tolerance": 6.0,
-            "capturedAt": util.now_ms(),
-            "accepted": False,
-            "issues": ["Your head is too far forward of your shoulders", "Your upper back is rounded"],
-            "stub": True,
-        }
-    return {
-        "schema": util.SCHEMA,
-        "goal": {"neckAngle": 15.0, "torsoAngle": 5.0, "headForwardOffset": 0.18},
-        "tolerance": 6.0,
-        "capturedAt": util.now_ms(),
-        "accepted": True,
-        "issues": [],
-        "stub": True,
-    }
+        goal = dict(STUB_FEATURES_SLOUCH)           # what it "measured": a slouched posture
+        issues = back_angle_issues(goal) + ["Your head is too far forward of your shoulders"]
+        return {"schema": util.SCHEMA, "goal": goal, "tolerance": 6.0, "capturedAt": util.now_ms(),
+                "accepted": False, "issues": issues, "stub": True}
+    goal = {"neckAngle": 15.0, "torsoAngle": 5.0, "headForwardOffset": 0.18}
+    issues = back_angle_issues(goal)                # the stub judges with the same back-angle gate
+    return {"schema": util.SCHEMA, "goal": goal, "tolerance": 6.0, "capturedAt": util.now_ms(),
+            "accepted": not issues, "issues": issues, "stub": True}
 
 
 @bp.get("/model/health")

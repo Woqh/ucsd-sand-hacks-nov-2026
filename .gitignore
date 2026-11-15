@@ -22,7 +22,7 @@ node_modules/
 web/dist/
 *.tsbuildinfo
 
-# Vite builds the dashboard into /public for Vercel (generated, not committed)
+# the dashboard builds into web/dist (ignored above); /public/ is the old Flask-preset output, kept ignored
 /public/
 
 # vercel

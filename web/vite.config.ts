@@ -8,8 +8,8 @@ export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [react(), tailwindcss()],
   build: {
-    // Vercel serves static files from /public (Flask preset), so the dashboard builds there.
-    outDir: '../public',
+    // The `web` service on Vercel (vercel.json) serves web/dist; the API is a separate service at /api.
+    outDir: 'dist',
     emptyOutDir: true,
   },
   server: {

@@ -13,12 +13,15 @@ Nothing returned here is stored by the server: the profile lives only in the use
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from collections import defaultdict, deque
 from typing import Any, Callable, Optional
 
 from api.ai.schemas import AIOutputError, parse_output
+
+log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-3.8-flash"
 TIMEOUT_MS = 30_000
@@ -61,6 +64,18 @@ def _real_client() -> Any:
 _client_factory: Callable[[], Any] = _real_client   # tests replace this
 
 
+def _log_failure(exc: Exception, model: str) -> None:
+    """Say WHY a call failed in the server's own log (the user only ever sees a generic message). Records the error
+    type, the provider's HTTP status and its short message, with the API key blanked out. Never the payload."""
+    detail = str(getattr(exc, "message", None) or exc)
+    key = os.environ.get("GEMINI_API_KEY")
+    if key:
+        detail = detail.replace(key, "***")
+    code, status = getattr(exc, "code", None), getattr(exc, "status", None)
+    where = "".join(f" {k}={v}" for k, v in (("http", code), ("status", status)) if v)
+    log.warning("Gemini call failed (model %s): %s%s: %s", model, type(exc).__name__, where, detail[:300])
+
+
 def generate_json(system: str, payload: dict[str, Any], schema: dict[str, Any], *,
                   model: Optional[str] = None, client: Any = None) -> dict[str, Any]:
     """Ask Gemini for JSON matching `schema` and return it validated. Raises AIError (never anything
@@ -68,12 +83,21 @@ def generate_json(system: str, payload: dict[str, Any], schema: dict[str, Any], 
     if client is None and not configured():
         raise AIError(503, "ai_not_configured", "AI analysis isn't enabled on this server.")
     cfg = build_config(system, schema)
+    # Keep a reference for the whole call. The SDK's Client closes its HTTP connection when it is garbage collected,
+    # so a temporary (`_client_factory().models.generate_content(...)`) is closed before the request is sent:
+    # "RuntimeError: Cannot send a request, as the client has been closed."
+    own = client is None
+    sdk = _client_factory() if own else client
     try:
-        resp = (client or _client_factory()).models.generate_content(
+        resp = sdk.models.generate_content(
             model=model or model_name(), contents=json.dumps(payload, separators=(",", ":")), config=cfg)
         text = resp.text
     except Exception as exc:           # network, auth, quota, safety blocks: report generically
+        _log_failure(exc, model or model_name())
         raise AIError(502, "ai_unavailable", "The AI service couldn't be reached right now.") from exc
+    finally:
+        if own and callable(getattr(sdk, "close", None)):
+            sdk.close()                # a client we created is ours to release
     if not text:
         raise AIError(502, "ai_empty", "The AI service returned no answer.")
     try:

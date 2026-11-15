@@ -169,3 +169,66 @@ def test_python_evidence_facts_match_the_web_copy():
         assert web in ts and py in facts, web
     assert "between ages 45 and 74" in facts and "peakAges: '45 and 74'" in ts
     assert "no consensus" in facts and "arthritis" in facts.lower()
+
+
+def test_the_real_reason_is_logged_for_the_operator_without_the_key_or_the_payload(caplog, monkeypatch):
+    secret = "AIzaSyFAKE-this-must-never-appear"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+
+    class Boom(Exception):
+        code, status = 404, "NOT_FOUND"
+        message = f"models/nope is not found for key {secret}"
+
+    with caplog.at_level("WARNING", logger="api.ai.gemini"):
+        with pytest.raises(gemini.AIError):
+            gemini.generate_json("S", {"habit": "private-payload"}, schemas.ASK_SCHEMA, model="nope", client=FakeClient(exc=Boom()))
+    text = caplog.text
+    assert "Boom" in text and "http=404" in text and "NOT_FOUND" in text and "model nope" in text
+    assert secret not in text and "private-payload" not in text and "***" in text
+
+
+def test_the_real_sdk_client_survives_the_call_and_sends_the_expected_request(monkeypatch):
+    """Regression: the SDK closes its HTTP client when the Client object is garbage collected, so using it as a
+    temporary made every real call fail with 'Cannot send a request, as the client has been closed'. This drives the
+    REAL google-genai client (which owns its httpx client) over a fake network."""
+    httpx = pytest.importorskip("httpx")
+    genai = pytest.importorskip("google.genai")
+    from google.genai import types
+
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        reply = {"candidates": [{"content": {"role": "model", "parts": [{"text": json.dumps({"answer": "ok", "basedOn": [], "outOfScope": False})}]},
+                                 "finishReason": "STOP"}]}
+        return httpx.Response(200, json=reply)
+
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaFAKE-test-key")
+    monkeypatch.setattr(gemini, "_client_factory", lambda: genai.Client(
+        api_key="AIzaFAKE-test-key", http_options=types.HttpOptions(client_args={"transport": httpx.MockTransport(handler)})))
+
+    out = gemini.generate_json("SYSTEM PROMPT", {"habit": 1}, schemas.ASK_SCHEMA, model="gemini-test")
+    assert out == {"answer": "ok", "basedOn": [], "outOfScope": False}
+
+    req = seen[0]
+    assert str(req.url).split("?")[0].endswith("/models/gemini-test:generateContent")
+    assert req.headers["x-goog-api-key"] == "AIzaFAKE-test-key" and "AIzaFAKE-test-key" not in str(req.url)
+    body = json.loads(req.content)
+    assert body["systemInstruction"]["parts"][0]["text"] == "SYSTEM PROMPT"
+    assert json.loads(body["contents"][0]["parts"][0]["text"]) == {"habit": 1}
+    cfg = body["generationConfig"]
+    assert cfg["responseMimeType"] == "application/json" and cfg["responseJsonSchema"]["required"] == ["answer", "basedOn", "outOfScope"]
+    # a client we created is released afterwards, and a second call builds a fresh working one
+    assert gemini.generate_json("S", {}, schemas.ASK_SCHEMA, model="gemini-test")["answer"] == "ok"
+
+
+def test_a_caller_supplied_client_is_not_closed_by_us():
+    class Closable(FakeClient):
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    c = Closable(text=json.dumps({"answer": "ok", "basedOn": [], "outOfScope": False}))
+    gemini.generate_json("S", {}, schemas.ASK_SCHEMA, client=c)
+    assert c.closed is False

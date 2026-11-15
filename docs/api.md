@@ -99,7 +99,7 @@ or risk score**. Instead:
   `compact_for_ai` (`GET /coach/preview` shows the exact payload and sends nothing). It never receives pain
   check-ins, ids, tokens, dates, images or the exercise steps. Outputs are validated against a JSON schema
   (Gemini ignores length limits, so the server enforces them) and returned to the browser **without being stored**.
-  Per-user limit 6 calls/hour (in-process, so per server instance). Errors never include provider detail
+  Per-user limit 6 calls/hour (in-process, so per server instance). Errors never include provider detail to the client (the real reason, with the key redacted, is written to the server log)
   (`ai_unavailable`, `ai_bad_output`, `rate_limited`).
 - `settings-from-text` returns a **proposal** (`patch` plus a `changes` diff, validated by the same code as
   `PUT /settings`). It is never applied here; the dashboard shows the diff and applies it only after the user confirms.

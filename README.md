@@ -273,11 +273,11 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 > Written against the current Vercel docs but **not yet deployed**; expect to adjust on first deploy.
 
 1. **Database:** set up Tiger Cloud as in [Configure everything](#tiger-cloud-database-tiger-data) and run `python scripts/init_db.py` once.
-2. **Vercel:** new project from this repo, framework preset **Flask**. `vercel.json` builds the dashboard (`web/` -> `/public`) and rewrites non-`/api` paths to the SPA. `index.py` at the repo root is the Flask entrypoint (it re-exports `api/index.py`).
+2. **Vercel:** new project from this repo with **Root Directory = the repo root** (and run the Vercel CLI from there). `vercel.json` uses **Vercel Services** (beta): service `api` (Flask; entrypoint root `index.py`, which re-exports `api/index.py`) is public at `/api/*`, and service `web` (the Vite dashboard in `web/`, built to `web/dist`, with a single-page-app fallback to `index.html`) is public at everything else. Requests keep their original path, so Flask sees `/api/...` exactly as it does locally. There are **no bindings**: the dashboard calls the API from the browser through the shared domain, not server to server. The teammate's `posture_pipeline-main/` is deliberately **not** a service (a local model, not something to host; see `docs/model-bridge.md`). Build and runtime keys (`functions`, `buildCommand`, ...) live inside each service, not at the top level of `vercel.json`.
 3. **Env vars** (names in [`.env.example`](.env.example)): `DATABASE_URL` (the **transaction pooler** string), `VAPID_*` (generate with `python scripts/gen_vapid.py`), `APNS_*`. Leave `ENABLE_DEV_ROUTES` unset on anything judges will use, unless you want the demo-data button. On Vercel the in-memory store is refused, so a missing `DATABASE_URL` fails loudly.
 4. **Turn off Deployment Protection** for the project, or the phone and judges' browsers hit an auth wall.
 5. Put the temporary `https://<project>.vercel.app` URL in `ios/Sitwise/Config.swift`.
-6. If the build image has no Node, build the dashboard locally (`cd web && npm run build`) and commit `public/` (remove it from `.gitignore`).
+6. To try both services together before pushing, `vercel dev` runs them locally; otherwise run Flask and Vite as in the quick start. If a deploy fails, the build log names the service (`api` or `web`).
 
 ### Data collection and Gemini suggestions
 

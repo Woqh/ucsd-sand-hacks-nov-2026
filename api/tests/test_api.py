@@ -138,6 +138,54 @@ def test_alert_response_reports_channels_skipped_when_not_configured(env):
     assert alert["channels"]["desktop"]["skipped"] == "no_browser_subscribed"
 
 
+def test_receiver_phone_pairs_without_replacing_sensor_and_gets_phone_alerts(env, monkeypatch):
+    client, clock, store = env
+    dash, sensor = paired(client)
+    pairing = client.post("/api/push/web/receiver/pairing", headers=auth(dash))
+    assert pairing.status_code == 200
+    code = pairing.get_json()["code"]
+    assert len(code) == 8
+    assert client.post("/api/push/web/receiver/pairing", headers=auth(sensor)).status_code == 401
+
+    claim = client.post("/api/push/web/receiver/claim", json={"code": f" {code[:4]}-{code[4:].lower()} "})
+    assert claim.status_code == 200
+    receiver = claim.get_json()["receiverToken"]
+    assert client.post("/api/push/web/receiver/claim", json={"code": code}).status_code == 404
+    assert client.get("/api/settings", headers=auth(receiver)).status_code == 401
+
+    subscription = {"endpoint": "https://push.example/device/one",
+                    "keys": {"p256dh": "public-key", "auth": "auth-key"}}
+    assert client.post("/api/push/web/receiver/subscribe", json={"subscription": subscription},
+                       headers=auth(receiver)).status_code == 200
+    assert client.post("/api/push/web/receiver/subscribe", json={"subscription": subscription},
+                       headers=auth(dash)).status_code == 401
+    assert any(s["kind"] == "web_phone" and s["endpoint"] == subscription["endpoint"]
+               for s in all_subscriptions(store))
+
+    monkeypatch.setattr("api.push.dispatch.apns.configured", lambda: False)
+    monkeypatch.setattr("api.push.dispatch.webpush.configured", lambda: True)
+    monkeypatch.setattr("api.push.dispatch.webpush.send", lambda *args, **kwargs: (True, 201, None))
+    test = client.post("/api/push/test", json={"channel": "phone"}, headers=auth(dash))
+    assert test.get_json()["result"] == {"sent": 1, "failed": 0, "skipped": None}
+
+    assert client.post("/api/posture/ingest", json=sample(clock), headers=auth(sensor)).status_code == 200
+    unsub = client.post("/api/push/web/receiver/unsubscribe", json={"endpoint": subscription["endpoint"]},
+                        headers=auth(receiver))
+    assert unsub.status_code == 200
+    assert not any(s["kind"] == "web_phone" for s in all_subscriptions(store))
+    assert client.post("/api/push/web/receiver/subscribe", json={"subscription": subscription},
+                       headers=auth(receiver)).status_code == 401
+
+
+def test_receiver_pairing_code_expires(env):
+    client, clock, _ = env
+    dash, _ = paired(client)
+    code = client.post("/api/push/web/receiver/pairing", headers=auth(dash)).get_json()["code"]
+    clock["t"] += 10 * 60 * 1000 + 1
+    claim = client.post("/api/push/web/receiver/claim", json={"code": code})
+    assert claim.status_code == 404 and claim.get_json()["error"]["code"] == "invalid_code"
+
+
 def test_channels_can_be_turned_off(env):
     client, clock, _ = env
     dash, dev = paired(client)

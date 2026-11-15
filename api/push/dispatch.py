@@ -33,7 +33,7 @@ def _message(level: int, tone: str = "gentle") -> tuple[str, str]:
     return table.get(level) or table[max(table)]
 
 
-def _send_phone(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
+def _send_apns(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
     subs = store.list_push_subscriptions(user_id, "apns")
     if not subs:
         return {"sent": 0, "failed": 0, "skipped": "no_device_registered"}
@@ -51,8 +51,8 @@ def _send_phone(store: Any, user_id: str, title: str, body: str) -> dict[str, An
     return {"sent": sent, "failed": failed, "skipped": None}
 
 
-def _send_desktop(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
-    subs = store.list_push_subscriptions(user_id, "web")
+def _send_web(store: Any, user_id: str, title: str, body: str, kind: str) -> dict[str, Any]:
+    subs = store.list_push_subscriptions(user_id, kind)
     if not subs:
         return {"sent": 0, "failed": 0, "skipped": "no_browser_subscribed"}
     if not webpush.configured():
@@ -66,8 +66,26 @@ def _send_desktop(store: Any, user_id: str, title: str, body: str) -> dict[str, 
         else:
             failed += 1
             if webpush.is_dead_subscription(status):
-                store.delete_push_subscription(user_id, "web", s["endpoint"])
+                store.delete_push_subscription(user_id, kind, s["endpoint"])
     return {"sent": sent, "failed": failed, "skipped": None}
+
+
+def _send_phone(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
+    results = [_send_apns(store, user_id, title, body),
+               _send_web(store, user_id, title, body, "web_phone")]
+    sent = sum(r["sent"] for r in results)
+    failed = sum(r["failed"] for r in results)
+    skips = sorted({r["skipped"] for r in results if r["skipped"] not in (None, "no_device_registered",
+                                                                           "no_browser_subscribed")})
+    if not sent and not failed and not skips:
+        skipped = "no_device_registered"
+    else:
+        skipped = ",".join(skips) if skips else None
+    return {"sent": sent, "failed": failed, "skipped": skipped}
+
+
+def _send_desktop(store: Any, user_id: str, title: str, body: str) -> dict[str, Any]:
+    return _send_web(store, user_id, title, body, "web")
 
 
 def send_alert(store: Any, user: dict[str, Any], level: int) -> dict[str, Any]:

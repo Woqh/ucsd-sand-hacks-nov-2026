@@ -29,7 +29,8 @@ def _postgres_store():
 
     from api.db import PostgresStore
     with psycopg.connect(url, autocommit=True, prepare_threshold=None) as c:
-        c.execute("drop table if exists samples, calibrations, checkins, events, sessions, push_subscriptions, users cascade")
+        c.execute("drop table if exists samples, calibrations, checkins, events, sessions, push_subscriptions, "
+                  "push_receiver_pairings, push_receiver_tokens, users cascade")
         c.execute(SCHEMA)
     return PostgresStore(url)
 

@@ -132,6 +132,17 @@ Running the tests against Postgres: start a **local** database and run `TEST_DAT
 
 Works on `http://localhost` and on HTTPS (Chrome, Edge, Firefox). If the page says the server has no VAPID key, step 1 didn't take effect (check `.env` and restart).
 
+### Add a second iPhone as an alert receiver
+
+The additional iPhone can receive phone-channel alerts over Wi-Fi/internet without replacing the posture-sensing phone. Configure the VAPID keys from the Desktop notifications section above, deploy the dashboard over HTTPS, and:
+
+1. On the dashboard, open **Settings → Connect another iPhone → Generate phone setup code**.
+2. On the receiver iPhone (iOS 16.4+), open the displayed receiver link in Safari, use **Share → Add to Home Screen**, then launch Sitwise from its Home Screen icon.
+3. Enter the one-time code on the receiver page and tap **Enable alerts on this phone**. Allow notifications.
+4. On the dashboard, use **Test phone alert**. The phone-alert setting controls both the paired iPhone and receiver phones.
+
+The receiver gets only permission to register or remove its own notification subscription, not dashboard access. iOS notification settings control whether/how alerts vibrate. This receiver uses Wi-Fi/internet push; it does not use Bluetooth. Disconnect it from the receiver page when no longer needed.
+
 ### iPhone app and push (APNs)
 
 Needs a Mac with Xcode, a **physical iPhone** (the camera), and a paid **Apple Developer** account (push). The app is written but **not yet built**; expect small compile fixes (see [`ios/README.md`](ios/README.md) for the build steps).

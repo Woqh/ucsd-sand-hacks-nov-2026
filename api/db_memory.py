@@ -27,6 +27,8 @@ class MemoryStore:
         self.checkins: list[dict] = []
         self.samples: list[dict] = []
         self.calibrations: list[dict] = []
+        self.receiver_pairings: dict[str, dict] = {}
+        self.receiver_tokens: dict[str, str] = {}
         self._next_event_id = 1
         self._next_sub_id = 1
         if path and os.path.exists(path):
@@ -38,6 +40,8 @@ class MemoryStore:
                 self.checkins = d.get("checkins", [])
                 self.samples = d.get("samples", [])
                 self.calibrations = d.get("calibrations", [])
+                self.receiver_pairings = d.get("receiver_pairings", {})
+                self.receiver_tokens = d.get("receiver_tokens", {})
                 self._next_event_id = max([e["id"] for e in self.events], default=0) + 1
                 self._next_sub_id = max([s["id"] for s in self.subs], default=0) + 1
             except Exception:
@@ -50,7 +54,9 @@ class MemoryStore:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"users": self.users, "sessions": self.sessions, "events": self.events,
                        "subs": self.subs, "checkins": self.checkins,
-                       "samples": self.samples, "calibrations": self.calibrations}, f)
+                       "samples": self.samples, "calibrations": self.calibrations,
+                       "receiver_pairings": self.receiver_pairings,
+                       "receiver_tokens": self.receiver_tokens}, f)
         os.replace(tmp, self._path)
 
     def ping(self) -> tuple[bool, Optional[str]]:
@@ -221,4 +227,34 @@ class MemoryStore:
         with self._lock:
             self.subs = [s for s in self.subs if not (s["user_id"] == user_id and s["kind"] == kind
                                                       and s["endpoint"] == endpoint)]
+            self._save()
+
+    # ---- receiver-only phone pairing
+    def create_push_receiver_pairing(self, user_id: str, code: str, expires_at: int) -> None:
+        with self._lock:
+            self.receiver_pairings = {k: v for k, v in self.receiver_pairings.items()
+                                      if v["expires_at"] >= expires_at - 10 * 60 * 1000}
+            self.receiver_pairings[code] = {"user_id": user_id, "expires_at": expires_at}
+            self._save()
+
+    def claim_push_receiver_pairing(self, code: str, now: int) -> Optional[str]:
+        with self._lock:
+            pairing = self.receiver_pairings.pop(code, None)
+            self._save()
+            return pairing["user_id"] if pairing and pairing["expires_at"] >= now else None
+
+    def save_push_receiver_token(self, user_id: str, token_hash: str) -> None:
+        with self._lock:
+            self.receiver_tokens[token_hash] = user_id
+            self._save()
+
+    def get_user_by_push_receiver_hash(self, token_hash: str) -> Optional[dict]:
+        with self._lock:
+            user_id = self.receiver_tokens.get(token_hash)
+            user = self.users.get(user_id) if user_id else None
+            return copy.deepcopy(user) if user else None
+
+    def delete_push_receiver_token(self, token_hash: str) -> None:
+        with self._lock:
+            self.receiver_tokens.pop(token_hash, None)
             self._save()

@@ -36,6 +36,10 @@ struct CalibrationBaseline: Codable, Equatable {
     var goal: PostureFeatures
     var tolerance: Double
     var capturedAt: Int64
+    /// Calibration gate verdict. Absent/nil = accepted. A model should THROW `CalibrationError`
+    /// rather than return a rejected baseline; these exist to mirror the wire contract.
+    var accepted: Bool? = nil
+    var issues: [String]? = nil
 }
 
 struct AlertChannels: Codable, Equatable {

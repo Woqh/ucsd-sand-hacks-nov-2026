@@ -1,9 +1,11 @@
--- Sitwise schema for Supabase (Postgres). Run once in the Supabase SQL editor.
--- All timestamps from the phone are epoch milliseconds (bigint). Only the Flask API (service-role
--- key) touches these tables. Row Level Security is ENABLED on every table below with NO policies, so
--- the public (publishable/anon) key can read and write nothing, while the service-role key bypasses
--- RLS and keeps working. (Supabase exposes public-schema tables to the Data API, so leaving RLS off
--- would make them reachable with the publishable key.) There are no policies to wire up.
+-- Sitwise schema for Postgres, built for Tiger Cloud (TimescaleDB). Safe to re-run.
+--   python scripts/init_db.py        applies this file to DATABASE_URL
+-- or paste it into the Tiger Console SQL editor.
+--
+-- Only the Flask API connects (with the database credentials), so there is no row-level security to
+-- wire up. All timestamps from the phone are epoch milliseconds (bigint, `t`); `events` also carries
+-- the same instant as `ts` (timestamptz) because that is its hypertable partition column.
+-- On plain Postgres (no TimescaleDB) the same file works and `events` is an ordinary table.
 
 create table if not exists users (
   id                    uuid primary key default gen_random_uuid(),
@@ -29,21 +31,23 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user_seen on sessions (user_id, last_seen_server_ms desc);
 
--- State transitions (and escalation alerts). Durations and every metric derive from these.
+-- State transitions (and escalation alerts): the time series. Durations and every metric derive from
+-- these. No primary key on purpose: a hypertable's unique indexes must include the partition column.
 create table if not exists events (
-  id          bigint generated always as identity primary key,
+  id          bigint generated always as identity,
   user_id     uuid not null references users(id) on delete cascade,
   session_id  uuid,
-  t           bigint not null,
+  ts          timestamptz not null,                -- same instant as t (hypertable partition column)
+  t           bigint not null,                     -- epoch ms, phone clock
   kind        text not null default 'transition',  -- transition | alert
   from_state  text,
   to_state    text,
   alert       boolean not null default false,
   level       int not null default 0,
   reason      text,
-  deviation   real
+  deviation   double precision
 );
-create index if not exists events_user_t on events (user_id, t);
+create index if not exists events_user_ts on events (user_id, ts desc);
 
 create table if not exists push_subscriptions (
   id          bigint generated always as identity primary key,
@@ -55,8 +59,23 @@ create table if not exists push_subscriptions (
   unique (user_id, kind, endpoint)
 );
 
--- Lock the tables to the service role (safe to re-run).
-alter table users              enable row level security;
-alter table sessions           enable row level security;
-alter table events             enable row level security;
-alter table push_subscriptions enable row level security;
+-- Tiger Cloud / TimescaleDB: make `events` a hypertable (weekly chunks) and compress old chunks.
+-- Skipped automatically where the extension isn't available. The compression step is best-effort:
+-- TimescaleDB renamed these APIs across versions, so a failure there only prints a notice.
+do $$
+begin
+  if exists (select 1 from pg_available_extensions where name = 'timescaledb') then
+    create extension if not exists timescaledb;
+    perform create_hypertable('events', 'ts', chunk_time_interval => interval '7 days',
+                              if_not_exists => true, migrate_data => true);
+    begin
+      alter table events set (timescaledb.enable_columnstore = true,
+                              timescaledb.segmentby = 'user_id', timescaledb.orderby = 'ts desc');
+      call add_columnstore_policy('events', after => interval '14 days', if_not_exists => true);
+    exception when others then
+      raise notice 'events is a hypertable but compression was not configured: %', sqlerrm;
+    end;
+  else
+    raise notice 'timescaledb not available: events is a plain table';
+  end if;
+end $$;

@@ -12,6 +12,21 @@ protocol PostureModel {
     func analyze(frame: CVPixelBuffer) async throws -> PostureSample
 }
 
+/// The calibration gate: a goal posture is only saved if it is a *good* posture to aim for.
+/// A model's `calibrate()` must THROW this (with human-readable reasons) instead of returning a
+/// baseline when the captured posture isn't good: slouched, unstable, person not fully in frame,
+/// low confidence. The server enforces the same rule (it rejects `accepted: false` with 422), but
+/// the model is what decides. See "Calibration gate" in docs/api.md for suggested checks.
+enum CalibrationError: LocalizedError {
+    case notGoodPosture(issues: [String])
+
+    var errorDescription: String? {
+        switch self {
+        case .notGoodPosture(let issues): return issues.isEmpty ? "That wasn't a good goal posture." : issues.joined(separator: "; ")
+        }
+    }
+}
+
 /// Returns fixed mock data so the whole app (and the server's alerts) can be exercised without the
 /// real model: cycles GOOD -> SLOUCHING -> GOOD on a timer, ignoring the frame entirely.
 final class StubPostureModel: PostureModel {
@@ -22,6 +37,12 @@ final class StubPostureModel: PostureModel {
 
     func calibrate() async throws -> CalibrationBaseline {
         try await Task.sleep(nanoseconds: 800_000_000)   // pretend to think
+        // Demo switch: add the launch argument `-simulateBadCalibration` in Xcode (Scheme > Arguments)
+        // to see the calibration gate reject a posture.
+        if CommandLine.arguments.contains("-simulateBadCalibration") {
+            throw CalibrationError.notGoodPosture(issues: ["Your head is too far forward of your shoulders",
+                                                           "Your upper back is rounded"])
+        }
         return CalibrationBaseline(
             goal: PostureFeatures(neckAngle: 15.0, torsoAngle: 5.0, headForwardOffset: 0.18),
             tolerance: 6.0,

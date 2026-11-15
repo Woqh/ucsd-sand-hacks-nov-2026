@@ -26,10 +26,14 @@ def create_app(store: Any = None) -> Flask:
     @app.get("/api/health")
     def health():
         # Deliberately unauthenticated and non-sensitive: lets the dashboard show a demo-data
-        # button only when dev routes are on, and tells you which store you're talking to.
+        # button only when dev routes are on, and tells you which store you're talking to and
+        # whether it works. `problem` is a coarse code (never connection details):
+        # schema_missing | connect_failed | error.
         from api.db import get_store
-        return {"schema": util.SCHEMA, "ok": True, "devRoutes": util.dev_routes_enabled(),
-                "store": getattr(get_store(), "kind", "unknown")}
+        store = get_store()
+        db_ok, problem = store.ping()
+        return {"schema": util.SCHEMA, "ok": db_ok, "devRoutes": util.dev_routes_enabled(),
+                "store": getattr(store, "kind", "unknown"), "db": {"ok": db_ok, "problem": problem}}
 
     @app.errorhandler(ApiError)
     def _api_error(e: ApiError):

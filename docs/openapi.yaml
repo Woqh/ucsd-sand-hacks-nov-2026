@@ -46,6 +46,15 @@ components:
         goal: { $ref: "#/components/schemas/Features" }
         tolerance: { type: number, exclusiveMinimum: true, minimum: 0 }
         capturedAt: { type: integer, format: int64 }
+        accepted:
+          type: boolean
+          description: >
+            Calibration gate (optional, default true). The model's verdict on whether the captured posture is a
+            GOOD goal posture. false means "do not store": PUT /calibration answers 422 posture_not_good.
+        issues:
+          type: array
+          items: { type: string }
+          description: Human-readable reasons when accepted is false (shown to the user). Not stored.
         stub: { type: boolean }
     Settings:
       type: object
@@ -165,8 +174,8 @@ components:
 paths:
   /health:
     get:
-      summary: Liveness + which store/dev routes are on (public; non-sensitive)
-      responses: { "200": { description: "{ok, devRoutes, store}" } }
+      summary: Liveness + which store/dev routes are on + whether the database works (public; non-sensitive)
+      responses: { "200": { description: "{ok, devRoutes, store: memory|postgres, db: {ok, problem: null|schema_missing|connect_failed|error}}" } }
   /pair/create:
     post:
       summary: New anonymous user + dashboard token + pairing code. With a dashboard token, only issues a fresh code.
@@ -215,11 +224,14 @@ paths:
       security: [{ dashboardToken: [] }, { deviceToken: [] }]
       responses: { "200": { description: "{calibrated, baseline|null}" } }
     put:
-      summary: Store a baseline produced by the model
+      summary: "Store a baseline produced by the model (only if it was accepted: the calibration gate)"
       security: [{ dashboardToken: [] }, { deviceToken: [] }]
       requestBody:
         content: { application/json: { schema: { $ref: "#/components/schemas/CalibrationBaseline" } } }
-      responses: { "200": { description: "{calibrated, baseline}" } }
+      responses:
+        "200": { description: "{calibrated, baseline} (accepted/issues are not stored)" }
+        "400": { description: invalid_baseline }
+        "422": { description: "posture_not_good: the baseline had accepted=false; nothing stored" }
   /metrics:
     get:
       summary: Aggregates for analytics
@@ -272,9 +284,11 @@ paths:
       responses: { "200": { description: '{"status":"started","stub":true}' } }
   /model/calibrate/finish:
     post:
-      summary: "STUB: finish calibration, returns a mock baseline"
+      summary: "STUB: finish calibration, returns a mock baseline. ?force=bad simulates the model rejecting the posture"
       security: [{ dashboardToken: [] }, { deviceToken: [] }]
-      responses: { "200": { description: "CalibrationBaseline plus stub: true" } }
+      parameters:
+        - { name: force, in: query, schema: { type: string, enum: [bad] }, description: "bad => accepted=false with issues" }
+      responses: { "200": { description: "CalibrationBaseline (with accepted/issues) plus stub: true" } }
   /model/health:
     get:
       summary: "STUB: is the model service ready?"

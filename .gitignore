@@ -10,7 +10,7 @@ __pycache__/
 !.env.example
 *.p8
 
-# local dev database (memory store persists here when Supabase isn't configured)
+# local dev database (memory store persists here when DATABASE_URL isn't set)
 .devdb.json
 
 # web

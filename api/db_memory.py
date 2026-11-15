@@ -1,6 +1,6 @@
-"""In-memory Store with the same interface as the Supabase one in db.py.
+"""In-memory Store with the same interface as the PostgresStore in db.py.
 
-Used for tests and for local dev when SUPABASE_URL isn't set. When `path` is given it persists to
+Used for tests and for local dev when DATABASE_URL isn't set. When `path` is given it persists to
 a JSON file after every write, so Flask's debug reloader doesn't wipe your paired device.
 Never used on Vercel (db.get_store refuses to fall back to it there).
 """
@@ -45,6 +45,9 @@ class MemoryStore:
             json.dump({"users": self.users, "sessions": self.sessions, "events": self.events,
                        "subs": self.subs}, f)
         os.replace(tmp, self._path)
+
+    def ping(self) -> tuple[bool, Optional[str]]:
+        return True, None
 
     # ---- users
     def create_user(self, dashboard_token_hash: str, pairing_code: str, pairing_expires_at: int,
@@ -93,8 +96,15 @@ class MemoryStore:
             return copy.deepcopy(max(mine, key=lambda s: s["last_seen_server_ms"])) if mine else None
 
     def save_session(self, session: dict) -> None:
+        """Upsert. Like the Postgres store, an existing row keeps its id/user_id/started_at and only
+        last_t, last_seen_server_ms, state and last_sample change."""
         with self._lock:
-            self.sessions[session["id"]] = copy.deepcopy(session)
+            existing = self.sessions.get(session["id"])
+            if existing:
+                for k in ("last_t", "last_seen_server_ms", "state", "last_sample"):
+                    existing[k] = copy.deepcopy(session.get(k))
+            else:
+                self.sessions[session["id"]] = copy.deepcopy(session)
             self._save()
 
     # ---- events

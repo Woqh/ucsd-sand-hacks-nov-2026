@@ -43,11 +43,25 @@ def calibrate_start():
 @bp.post("/model/calibrate/finish")
 @any_client
 def calibrate_finish():
+    """Returns a mock baseline. `?force=bad` simulates the model REJECTING the captured posture
+    (`accepted: false` + `issues`) so the calibration gate and its UI can be tested end to end."""
+    if request.args.get("force") == "bad":
+        return {
+            "schema": util.SCHEMA,
+            "goal": STUB_FEATURES_SLOUCH,           # what it measured: a slouched posture
+            "tolerance": 6.0,
+            "capturedAt": util.now_ms(),
+            "accepted": False,
+            "issues": ["Your head is too far forward of your shoulders", "Your upper back is rounded"],
+            "stub": True,
+        }
     return {
         "schema": util.SCHEMA,
         "goal": {"neckAngle": 15.0, "torsoAngle": 5.0, "headForwardOffset": 0.18},
         "tolerance": 6.0,
         "capturedAt": util.now_ms(),
+        "accepted": True,
+        "issues": [],
         "stub": True,
     }
 

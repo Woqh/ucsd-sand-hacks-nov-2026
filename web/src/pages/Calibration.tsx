@@ -1,27 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { Banner, Button, Card, CardTitle } from '../components/ui'
 import { usePoll } from '../hooks'
-import type { CalibrationBaseline } from '../types'
+import type { CalibrationBaseline, Health } from '../types'
 
 const COUNTDOWN_SEC = 10
-type Phase = 'idle' | 'counting' | 'saving' | 'done'
+type Phase = 'idle' | 'counting' | 'saving' | 'done' | 'rejected'
 
-/** Guided "sit comfortably" flow. The interface owns the flow and stores the result; the model
- *  does the math. Until the on-device model lands this runs against the server's model STUBS
- *  (POST /model/calibrate/start|finish return mock data). */
+/** Guided "sit comfortably" flow. The interface owns the flow and stores the result; the model does
+ *  the math AND judges whether the captured posture is a good goal posture (the calibration gate:
+ *  `accepted: false` + `issues` means "try again", and the server refuses to store it either way).
+ *  Until the on-device model lands this runs against the server's model STUBS. */
 export default function Calibration() {
   const current = usePoll(() => api<{ calibrated: boolean; baseline: CalibrationBaseline | null }>('/calibration'), 0)
+  const health = usePoll(() => api<Health>('/health', { auth: false }), 0)
   const [phase, setPhase] = useState<Phase>('idle')
   const [left, setLeft] = useState(COUNTDOWN_SEC)
   const [error, setError] = useState<string | null>(null)
+  const [issues, setIssues] = useState<string[]>([])
   const [saved, setSaved] = useState<CalibrationBaseline | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => () => clearInterval(timer.current), [])
 
-  async function begin() {
+  /** `demoBad` (dev builds only) asks the model stub to reject the posture, to show the gate working. */
+  async function begin(demoBad = false) {
     setError(null)
+    setIssues([])
     try {
       await api('/model/calibrate/start', { method: 'POST' })
     } catch (e) {
@@ -36,23 +41,31 @@ export default function Calibration() {
       setLeft(n)
       if (n <= 0) {
         clearInterval(timer.current)
-        void finish()
+        void finish(demoBad)
       }
     }, 1000)
   }
 
-  async function finish() {
+  async function finish(demoBad: boolean) {
     setPhase('saving')
     try {
-      const baseline = await api<CalibrationBaseline>('/model/calibrate/finish', { method: 'POST' })
+      const baseline = await api<CalibrationBaseline>(`/model/calibrate/finish${demoBad ? '?force=bad' : ''}`, { method: 'POST' })
+      if (baseline.accepted === false) return reject(baseline.issues ?? [])
+      // accepted: store it (the server re-checks `accepted`, so a rejected posture can never be saved)
       const stored = await api<{ baseline: CalibrationBaseline }>('/calibration', { method: 'PUT', body: baseline })
       setSaved({ ...stored.baseline, stub: baseline.stub })
       setPhase('done')
       current.refresh()
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'posture_not_good') return reject([e.message])
       setError((e as Error).message)
       setPhase('idle')
     }
+  }
+
+  function reject(list: string[]) {
+    setIssues(list)
+    setPhase('rejected')
   }
 
   function cancel() {
@@ -81,7 +94,14 @@ export default function Calibration() {
             <li>Sit the way you want to sit: back supported, shoulders relaxed, ears over shoulders.</li>
             <li>Hold still while the countdown runs.</li>
           </ol>
-          <Button onClick={begin}>{baseline ? 'Start again' : "I'm sitting comfortably. Start"}</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => begin()}>{baseline ? 'Start again' : "I'm sitting comfortably. Start"}</Button>
+            {health.data?.devRoutes && (
+              <Button variant="ghost" onClick={() => begin(true)}>
+                Demo: simulate a slouched posture
+              </Button>
+            )}
+          </div>
         </Card>
       )}
 
@@ -104,7 +124,27 @@ export default function Calibration() {
 
       {phase === 'saving' && (
         <Card className="text-center">
-          <p className="py-6 text-ink-2">Saving your goal posture…</p>
+          <p className="py-6 text-ink-2">Checking your posture…</p>
+        </Card>
+      )}
+
+      {phase === 'rejected' && (
+        <Card>
+          <div role="alert">
+            <CardTitle>That wasn't your best posture</CardTitle>
+            <p className="mb-2 text-sm text-ink-2">
+              Sitwise only saves a goal posture that's healthy to aim for, so nothing was saved. Here's what it noticed:
+            </p>
+            <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-ink">
+              {(issues.length ? issues : ['Your posture looked slouched.']).map((i) => (
+                <li key={i}>{i}</li>
+              ))}
+            </ul>
+            <p className="mb-4 text-sm text-ink-2">
+              Sit tall with your lower back supported, let your shoulders drop, and bring your ears over your shoulders. It should feel comfortable, not stiff. Then try again.
+            </p>
+          </div>
+          <Button onClick={() => setPhase('idle')}>Try again</Button>
         </Card>
       )}
 
@@ -114,7 +154,7 @@ export default function Calibration() {
         </Banner>
       )}
 
-      {baseline && phase !== 'counting' && (
+      {baseline && phase !== 'counting' && phase !== 'rejected' && (
         <Card>
           <CardTitle hint={`captured ${new Date(baseline.capturedAt).toLocaleString()}`}>Saved goal posture</CardTitle>
           <dl className="grid grid-cols-3 gap-2 text-center">

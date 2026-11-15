@@ -26,6 +26,9 @@ export interface CalibrationBaseline {
   goal: PostureFeatures
   tolerance: number
   capturedAt: number
+  /** The model's verdict (calibration gate). Absent = accepted. `false` => never stored; show `issues`. */
+  accepted?: boolean
+  issues?: string[]
   stub?: boolean
 }
 
@@ -122,7 +125,8 @@ export interface PairCreateResponse {
 export interface Health {
   ok: boolean
   devRoutes: boolean
-  store: 'supabase' | 'memory' | string
+  store: 'postgres' | 'memory' | string
+  db?: { ok: boolean; problem: 'schema_missing' | 'connect_failed' | 'error' | null }
 }
 
 export interface ChannelResult {

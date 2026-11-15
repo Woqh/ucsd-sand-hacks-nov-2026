@@ -45,6 +45,23 @@ Other behaviour worth knowing:
 - `t` is the phone clock. Out-of-order samples are clamped; `t` more than 1 h from server time is rejected (`clock_skew`).
 - Alerts respect quiet hours and the per-channel toggles. Push failures never fail ingest; `alert.channels` reports what happened (`skipped: apns_not_configured`, etc.).
 
+## Calibration gate: only a good posture is accepted
+
+The goal posture is what every later nudge is measured against, so a slouched "goal" would silently
+break the product. Whether a posture is *good* is a posture judgement, so **the model decides**; the
+interface enforces and surfaces it.
+
+- **Contract addition (flagged; optional and backwards-compatible):** the calibration result may carry `accepted` (bool, default `true` when absent) and `issues` (string[], user-facing reasons). `accepted: false` means "not a good goal posture".
+- **Server:** `PUT /calibration` answers **422 `posture_not_good`** for `accepted: false` and stores nothing; `accepted` and `issues` are verdict fields and are never persisted. So even a client that forgets to check can't save a bad baseline.
+- **Dashboard / iPhone:** show the reasons and a "Try again" step (iOS: a model throws `CalibrationError.notGoodPosture(issues:)`, the `PostureModel` signature is unchanged).
+- **Testing it without a model:** `POST /model/calibrate/finish?force=bad` returns a rejection; the dashboard has a dev-only "Demo: simulate a slouched posture" button; on iOS add the launch argument `-simulateBadCalibration`.
+
+**For the model teammate: what `calibrate()` should check before accepting** (thresholds are yours, since they depend on your angle conventions; cite an ergonomic reference for them):
+1. The person is fully in frame, with high confidence for the whole capture window.
+2. The posture is **stable** (low variance across the countdown), not mid-movement.
+3. The measured angles fall inside a *healthy envelope* (roughly: head over shoulders over hips, no pronounced forward head or rounded upper back).
+4. Keep the envelope **wide**. The product promise is "your own comfortable posture", so reject clear slouching, not personal preference, and report *why* in `issues` so the user can fix it.
+
 ## Status, staleness, metrics
 
 - `GET /status` is polled every ~2 s. Nothing runs in the background on Vercel, so **staleness is computed on read**: no sample for 15 s => `stale: true` and `state: AWAY` (`rawState` keeps the last real state).
@@ -55,7 +72,7 @@ Other behaviour worth knowing:
 
 | Change | Why |
 |---|---|
-| `GET /health` (public) | Dashboard shows the demo-data button only when dev routes are on; reports memory vs supabase store. Non-sensitive. |
+| `GET /health` (public) | Dashboard shows the demo-data button only when dev routes are on; reports the store (`memory` or `postgres`) and `db: {ok, problem}` (`schema_missing` / `connect_failed` / `error`; never connection details). `ok` is false when the DB check fails. Non-sensitive. |
 | `GET /push/web/public-key` (public) | The browser needs the VAPID **public** key to subscribe. |
 | `POST /push/test` | "Send test notification" buttons in Settings, essential for demoing alerts. |
 | `GET/PUT /settings` and `/calibration` accept either token | The iPhone app has a Settings screen and runs calibration. |

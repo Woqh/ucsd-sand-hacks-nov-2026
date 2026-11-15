@@ -1,24 +1,24 @@
-"""End-to-end API tests against the in-memory store with a fake clock."""
+"""End-to-end API tests with a fake clock. The `store` fixture (conftest.py) runs each test on the
+in-memory store and, if TEST_DATABASE_URL is set, on real Postgres too."""
 import uuid
 
 import pytest
 
 from api import util
 from api.app import create_app
-from api.db_memory import MemoryStore
+from api.tests.conftest import all_events, all_subscriptions, all_users
 
 T0 = 1_731_672_000_000  # 2024-11-15 12:00:00 UTC
 SID = str(uuid.uuid4())
 
 
 @pytest.fixture
-def env(monkeypatch):
+def env(monkeypatch, store):
     clock = {"t": T0}
     monkeypatch.setattr(util, "now_ms", lambda: clock["t"])
     monkeypatch.setenv("ENABLE_DEV_ROUTES", "1")
     for k in ("APNS_KEY_ID", "APNS_AUTH_KEY", "VAPID_PRIVATE_KEY"):
         monkeypatch.delenv(k, raising=False)
-    store = MemoryStore()
     client = create_app(store).test_client()
     return client, clock, store
 
@@ -53,7 +53,7 @@ def test_pairing_flow_and_token_rules(env):
     r = client.post("/api/pair/create").get_json()
     assert len(r["pairingCode"]) == 6 and r["dashboardToken"]
     # tokens are stored hashed, never raw
-    assert all(r["dashboardToken"] not in str(u) for u in store.users.values())
+    assert all(r["dashboardToken"] not in str(u) for u in all_users(store))
 
     claim = client.post("/api/pair/claim", json={"code": r["pairingCode"]})
     assert claim.status_code == 200
@@ -113,7 +113,7 @@ def test_slouch_fires_alert_then_recovers_and_status_tracks_it(env):
     st = client.get("/api/status", headers=auth(dash)).get_json()
     assert st["state"] == "SLOUCHING" and st["stale"] is False and st["device"]["online"] is True
     assert st["sample"]["label"] == "SLOUCHING"
-    alerts = [e for e in store.events if e["alert"]]
+    alerts = [e for e in all_events(store) if e["alert"]]
     assert len(alerts) == 1 and alerts[0]["to_state"] == "SLOUCHING" and alerts[0]["level"] == 1
 
     r = feed(client, dev, clock, 5, "GOOD", 0.1)
@@ -166,7 +166,7 @@ def test_new_session_closes_the_previous_one(env):
     clock["t"] += 60_000
     new_sid = str(uuid.uuid4())
     client.post("/api/posture/ingest", json=sample(clock, sid=new_sid), headers=auth(dev))
-    closes = [e for e in store.events if e["reason"] == "session_replaced"]
+    closes = [e for e in all_events(store) if e["reason"] == "session_replaced"]
     assert len(closes) == 1 and closes[0]["to_state"] == "AWAY"
 
 
@@ -204,6 +204,35 @@ def test_calibration_roundtrip(env):
     assert client.get("/api/status", headers=auth(dash)).get_json()["calibrated"] is True
 
 
+def test_calibration_gate_only_accepts_good_posture(env):
+    client, clock, _ = env
+    dash, dev = paired(client)
+    h = auth(dash)
+    # the model stub can be told to reject the captured posture
+    bad = client.post("/api/model/calibrate/finish?force=bad", headers=h).get_json()
+    assert bad["accepted"] is False and len(bad["issues"]) == 2
+    ok = client.post("/api/model/calibrate/finish", headers=h).get_json()
+    assert ok["accepted"] is True and ok["issues"] == []
+
+    # the server refuses to store a rejected baseline (even if a client forgot to check)
+    r = client.put("/api/calibration", json=bad, headers=h)
+    assert r.status_code == 422 and r.get_json()["error"]["code"] == "posture_not_good"
+    assert "head is too far forward" in r.get_json()["error"]["message"]
+    assert client.get("/api/calibration", headers=h).get_json()["calibrated"] is False
+    # rejected without reasons still gets a helpful message
+    r = client.put("/api/calibration", json={**bad, "issues": []}, headers=h)
+    assert r.status_code == 422 and "sit upright" in r.get_json()["error"]["message"]
+
+    # an accepted baseline is stored WITHOUT the verdict fields; omitting `accepted` still works
+    assert client.put("/api/calibration", json=ok, headers=auth(dev)).status_code == 200
+    stored = client.get("/api/calibration", headers=h).get_json()["baseline"]
+    assert "accepted" not in stored and "issues" not in stored and stored["goal"]["neckAngle"] == 15.0
+    legacy = {k: v for k, v in ok.items() if k not in ("accepted", "issues", "stub")}
+    assert client.put("/api/calibration", json=legacy, headers=auth(dev)).status_code == 200
+    # a bad value for `accepted` is a 400, not silently treated as accepted
+    assert client.put("/api/calibration", json={**ok, "accepted": "yes"}, headers=h).status_code == 400
+
+
 def test_push_registration_validation(env):
     client, _, store = env
     dash, dev = paired(client)
@@ -212,7 +241,7 @@ def test_push_registration_validation(env):
     sub = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "k", "auth": "a"}}
     assert client.post("/api/push/web/subscribe", json={"subscription": sub}, headers=auth(dash)).status_code == 200
     assert client.post("/api/push/web/subscribe", json={"subscription": {"endpoint": "http://x"}}, headers=auth(dash)).status_code == 400
-    kinds = sorted(s["kind"] for s in store.subs)
+    kinds = sorted(s["kind"] for s in all_subscriptions(store))
     assert kinds == ["apns", "web"]
     t = client.post("/api/push/test", json={"channel": "desktop"}, headers=auth(dash)).get_json()
     assert t["result"]["skipped"] == "vapid_not_configured"
@@ -256,9 +285,9 @@ def test_seed_then_metrics(env):
     assert client.get("/api/metrics?range=week&tzOffsetMin=x", headers=h).status_code == 400
 
     # re-seeding an existing user replaces their history rather than doubling it
-    n1 = len(client.application.config["STORE"].events)
+    n1 = len(all_events(client.application.config["STORE"]))
     client.post("/api/dev/seed", json={"days": 7}, headers=h)
-    assert len(client.application.config["STORE"].events) == n1
+    assert len(all_events(client.application.config["STORE"])) == n1
 
 
 def test_dev_routes_are_off_by_default(env, monkeypatch):

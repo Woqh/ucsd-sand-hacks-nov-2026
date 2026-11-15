@@ -10,7 +10,7 @@ Swift protocol and `/api/model/*` endpoints that return fixed mock data.
 
 **Contents:** [Quick start](#quick-start-no-accounts-no-phone-needed) ·
 [Configure everything](#configure-everything) · [Simulate the phone](#simulate-the-phone) ·
-[Troubleshooting](#troubleshooting) · [Layout](#layout) · [Deploy](#deploy-vercel--supabase)
+[Troubleshooting](#troubleshooting) · [Layout](#layout) · [Deploy](#deploy-vercel--tiger-cloud)
 
 ## Quick start (no accounts, no phone needed)
 
@@ -64,7 +64,7 @@ repo root (copy [`.env.example`](.env.example); it's gitignored, never commit re
 
 | Variable | Needed for | Notes |
 |---|---|---|
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | A real database | Set **both** or neither. Neither = in-memory store. Server-only secret |
+| `DATABASE_URL` | A real database (Tiger Cloud) | Unset = in-memory store. Contains the database password: server-only secret |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop notifications | `python scripts/gen_vapid.py` |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_AUTH_KEY`, `APNS_BUNDLE_ID`, `APNS_USE_SANDBOX` | iPhone notifications | From your Apple Developer account |
 | `ENABLE_DEV_ROUTES` | Demo seeding + the dashboard's "Load demo data" button | `1` to enable. Leave unset on anything public |
@@ -74,18 +74,27 @@ Not in `.env` (set in the shell): `API_PROXY`, `VITE_BASE` (dashboard, see below
 `SITWISE_BASE`, `SITWISE_DEVICE_TOKEN` (simulator).
 
 **Check what the API is using:** `curl http://127.0.0.1:5001/api/health` returns
-`{"ok":true,"devRoutes":true,"store":"memory"}`. `store` is `memory` or `supabase`; `devRoutes` is
-whether `ENABLE_DEV_ROUTES` took effect.
+`{"ok":true,"devRoutes":true,"store":"memory","db":{"ok":true,"problem":null}}`. `store` is `memory` or
+`postgres`; `db.problem` is `schema_missing`, `connect_failed` or `error` when the database check fails;
+`devRoutes` is whether `ENABLE_DEV_ROUTES` took effect.
 
-### Supabase (real database)
+### Tiger Cloud database (Tiger Data)
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Open the **SQL Editor**, paste all of [`api/schema.sql`](api/schema.sql) and run it. The Table Editor should now show `users`, `sessions`, `events`, `push_subscriptions`. (It turns Row Level Security on with no policies, so only the service key can read or write.)
-3. Copy two values: the **secret key** from **Settings → API Keys** (`sb_secret_…`; the legacy `service_role` key also works) and the **Project URL** from the **Connect** dialog (`https://<ref>.supabase.co`).
-4. Put them in `.env` as `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, restart Flask, and check `/api/health` says `"store":"supabase"`.
+The API stores everything in Postgres. [Tiger Data](https://www.tigerdata.com) (Tiger Cloud) is managed
+Postgres with TimescaleDB, and `events` (the posture time series) becomes a **hypertable**. Any Postgres
+works too. Without `DATABASE_URL` you get the in-memory store.
 
-The secret key is an admin key that bypasses all access rules. It lives only on the server (`.env` locally, Vercel env vars when deployed), never in the web app or the iPhone app. Rotate it in the same dashboard page if it leaks.
-Data from the in-memory store does **not** carry over: run `python scripts/seed.py` again, and re-pair (old dashboard tokens stop working and the browser signs itself out).
+1. Sign up at [tigerdata.com](https://www.tigerdata.com) and create a service (their free plan is fine for development; check the current plan and any hackathon credits on their site).
+2. From **Tiger Console**, copy the service's connection string. It looks like `postgres://tsdbadmin:<password>@<host>:<port>/tsdb?sslmode=require`. The password is shown once (or in the downloaded credentials file).
+3. Put it in `.env` as `DATABASE_URL`, then create the tables with the **direct** string (not a pooler): `python scripts/init_db.py`. It's safe to re-run and prints whether `events` became a hypertable.
+4. Restart Flask and check `/api/health`: `"store":"postgres"` and `"db":{"ok":true}`.
+5. **On Vercel use the transaction pooler string.** In Tiger Console add a pooler (**Operations → Connection pooling**); the *transaction* pool uses the same pooler port but database `tsdb_transaction`. Serverless functions open many short connections, which is what the pooler is for. The app keeps a small client pool (`DB_POOL_MAX`, default 4) and turns off prepared statements so it works through the pooler.
+
+`DATABASE_URL` contains the password: server-only (`.env` locally, Vercel env vars when deployed), never in the web app or the iPhone app.
+Data from the in-memory store does **not** carry over: run `python scripts/seed.py` again and re-pair (old dashboard tokens stop working and the browser signs itself out).
+
+**Status:** tested on plain Postgres (the same schema, all API and store tests). It has **not yet been run against a real Tiger Cloud service**, so the hypertable and compression steps in `api/schema.sql` are unverified until your first `init_db.py` there (a compression failure only prints a notice).
+Running the tests against Postgres: start a **local** database and run `TEST_DATABASE_URL=postgresql://... pytest api`. That run drops and recreates the tables, so it refuses non-local hosts.
 
 ### Desktop notifications (Web Push)
 
@@ -180,7 +189,9 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 | Dashboard bounces to the Pair page | Its token isn't recognised (store changed, `.devdb.json` deleted). Create a new dashboard or open a fresh `seed.py` link. |
 | No "Load demo data" button / `seed.py` says 404 | `ENABLE_DEV_ROUTES` isn't on. Check `/api/health` → `devRoutes`; for cmd use the quoted `set`. |
 | `.env` seems ignored | Run `flask` from the repo root, restart it after editing, and make sure `python-dotenv` is installed (`pip install -r requirements-dev.txt`). `pytest`/scripts never read `.env`. |
-| `/api/health` shows `memory` but you set Supabase | One of the two variables is missing or empty. Both are required. |
+| `/api/health` shows `memory` but you set `DATABASE_URL` | The variable isn't in the environment of the process running Flask. Run `flask` from the repo root, restart it after editing `.env`. |
+| `/api/health` shows `"db":{"ok":false,"problem":"schema_missing"}` | The tables don't exist yet: `python scripts/init_db.py`. |
+| `"problem":"connect_failed"` | Wrong URL/password, the service isn't reachable, or (on Vercel) you used the direct string where the pooler string is needed. |
 | Live says "phone hasn't reported yet" | No samples for 15 s: simulator stopped or on another account. |
 | `clock_skew` (HTTP 400) | The sending device's clock is more than 1 hour off server time. |
 | Test says "not sent: ... not configured" / "no browser subscribed" | The VAPID/APNs variables are missing, or the browser/phone hasn't enabled notifications yet (see above). |
@@ -190,21 +201,22 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 
 | Path | What |
 |---|---|
-| `api/` | Flask API. `core/` is pure, tested logic (state machine, scoring, settings, seed generator); `db.py` is the only file that touches Supabase; `push/` is APNs + Web Push |
+| `api/` | Flask API. `core/` is pure, tested logic (state machine, scoring, settings, seed generator); `db.py` is the only file that touches the database; `push/` is APNs + Web Push |
 | `web/` | React + TypeScript + Tailwind dashboard (Vite) |
 | `ios/` | SwiftUI app (see `ios/README.md`; **not yet built**) |
-| `scripts/` | `seed.py`, `simulate.py`, `gen_vapid.py`, `check_codemap.py` |
+| `scripts/` | `seed.py`, `simulate.py`, `init_db.py`, `gen_vapid.py`, `check_codemap.py` |
 | `docs/` | `openapi.yaml`, `api.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
+| `features.md` | Analytics and personalization roadmap, Gemini ideas, and what the health evidence does and doesn't support |
 
 `codemap.md` maps every file for quick navigation (and is what Claude reads first, per `CLAUDE.md`).
 
-## Deploy (Vercel + Supabase)
+## Deploy (Vercel + Tiger Cloud)
 
 > Written against the current Vercel docs but **not yet deployed**; expect to adjust on first deploy.
 
-1. **Supabase:** set it up as in [Configure everything](#supabase-real-database).
+1. **Database:** set up Tiger Cloud as in [Configure everything](#tiger-cloud-database-tiger-data) and run `python scripts/init_db.py` once.
 2. **Vercel:** new project from this repo, framework preset **Flask**. `vercel.json` builds the dashboard (`web/` -> `/public`) and rewrites non-`/api` paths to the SPA. `index.py` at the repo root is the Flask entrypoint (it re-exports `api/index.py`).
-3. **Env vars** (names in [`.env.example`](.env.example)): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_*` (generate with `python scripts/gen_vapid.py`), `APNS_*`. Leave `ENABLE_DEV_ROUTES` unset on anything judges will use, unless you want the demo-data button. On Vercel the in-memory store is refused, so missing Supabase variables fail loudly.
+3. **Env vars** (names in [`.env.example`](.env.example)): `DATABASE_URL` (the **transaction pooler** string), `VAPID_*` (generate with `python scripts/gen_vapid.py`), `APNS_*`. Leave `ENABLE_DEV_ROUTES` unset on anything judges will use, unless you want the demo-data button. On Vercel the in-memory store is refused, so a missing `DATABASE_URL` fails loudly.
 4. **Turn off Deployment Protection** for the project, or the phone and judges' browsers hit an auth wall.
 5. Put the temporary `https://<project>.vercel.app` URL in `ios/Sitwise/Config.swift`.
 6. If the build image has no Node, build the dashboard locally (`cd web && npm run build`) and commit `public/` (remove it from `.gitignore`).

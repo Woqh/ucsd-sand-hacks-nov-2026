@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import re
+import uuid
 from typing import Any, Optional
 
 from api.core.state_machine import Config, Sample
@@ -128,7 +129,11 @@ def parse_sample(payload: Any) -> tuple[str, Sample, dict[str, Any]]:
     if not isinstance(payload, dict):
         raise SampleError("body must be a JSON object")
     sid = payload.get("sessionId")
-    if not isinstance(sid, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", sid):
+    try:
+        sid = str(uuid.UUID(sid)) if isinstance(sid, str) else None   # canonical lowercase
+    except ValueError:
+        sid = None
+    if sid is None:
         raise SampleError("sessionId must be a UUID string")
     t = payload.get("t")
     if isinstance(t, bool) or not isinstance(t, (int, float)) or t <= 0:
@@ -149,4 +154,4 @@ def parse_sample(payload: Any) -> tuple[str, Sample, dict[str, Any]]:
         raise SampleError("features must be an object")
     features = {k: float(v) for k, v in features.items()
                 if isinstance(v, (int, float)) and not isinstance(v, bool)}
-    return sid.lower(), Sample(t=int(t), label=label, deviation=dev, confidence=float(conf)), features
+    return sid, Sample(t=int(t), label=label, deviation=dev, confidence=float(conf)), features

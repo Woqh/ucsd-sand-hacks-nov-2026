@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import { useToken } from './hooks'
-import Calibration from './pages/Calibration'
 import Camera from './pages/Camera'
 import Live from './pages/Live'
 import Pair from './pages/Pair'
@@ -28,7 +27,6 @@ export default function App() {
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/report" element={<Report />} />
-            <Route path="/calibration" element={<Calibration />} />
             <Route path="/camera" element={<Camera />} />
             <Route path="/settings" element={<Settings />} />
           </>

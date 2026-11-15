@@ -56,7 +56,7 @@ The model needs **Python 3.12** (MediaPipe has no 3.14 build), kept separate fro
 
 ```powershell
 py -3.12 -m venv posture_pipeline-main\.venv
-posture_pipeline-main\.venv\Scripts\python.exe -m pip install numpy==1.26.4 mediapipe==0.10.21 opencv-contrib-python==4.11.0.86 flask
+posture_pipeline-main\.venv\Scripts\python.exe -m pip install -r scripts/requirements-model.txt
 ```
 
 ## 3. Start three things
@@ -97,18 +97,15 @@ What you should see:
   `Stub (fixed mock data)` instead, the real model did not load or the server was not running when the camera
   started: see Troubleshooting, then **Stop camera** and **Start camera**.
 
-## 5. Tell it which way you face, and set your goal posture
+## 5. Choose your facing direction
 
 On the Camera page, to the right of the picture:
 
 1. **Which way do you face?** Choose **Left** or **Right**: where your nose points in the picture above. This
    matters: from a side view the model can't tell leaning forward from leaning back without it, and a wrong choice
    flips them. (**Auto** only works when your feet are in view.) The choice is remembered.
-2. Turn on **Send readings to the dashboard** (section 6) so the readings reach the server.
-3. **Goal posture, Set my goal posture**: sit the way you want to sit, hold still for the 10-second countdown, and the
-   server averages what the model measured. It is refused (with reasons) if the model couldn't see you for most of
-   it, you moved around, or the posture is more than 10 degrees from upright either way. It is the same as the
-   **Calibrate** tab, but here where the camera is. Every later reading is measured against it.
+2. Allow **Consent to data collection**, then turn on **Send readings to the dashboard**.
+3. No calibration is needed. Readings use the upright reference.
 
 **What the model is.** The teammate's pipeline (`posture_pipeline-main/`): MediaPipe finds your joints, and for a
 side camera a deterministic rule labels upright / leaning forward / leaning back using your torso angle (a +/-10
@@ -124,7 +121,7 @@ and the traceback in the model server's terminal.
 
 ## 6. Drive the dashboard from the camera
 
-On the Camera page, turn on **Send readings to the dashboard**. The browser tab then acts as the
+On the Camera page, allow **Consent to data collection**, then turn on **Send readings to the dashboard**. The browser tab then acts as the
 phone: each reading is posted to the API, so **Live**, alerts, **Analytics** and **Coach** run off your real
 posture, and the readings are stored in the database. Turning it on for the first time replaces any phone that is
 currently paired. Only a label, a deviation, a confidence, the torso and neck angles and the model's name are

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import DataConsent from '../components/DataConsent'
 import { api, tzOffsetMin } from '../api'
 import { clearToken, setToken } from '../auth'
 import { Banner, Button, Card, CardTitle } from '../components/ui'
@@ -90,6 +91,8 @@ export default function Pair() {
           </Button>
         </Card>
       )}
+
+      {token && <DataConsent />}
 
       {token && paired && (
         <Card>

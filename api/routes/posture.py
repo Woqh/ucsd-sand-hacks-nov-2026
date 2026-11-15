@@ -31,6 +31,8 @@ def _event_row(user_id: str, session_id: str, e: dict[str, Any]) -> dict[str, An
 @device_only
 def ingest():
     user = g.user
+    if (user.get("settings") or {}).get("dataCollectionConsent") is not True:
+        raise ApiError(403, "collection_consent_required", "Allow posture data collection in Settings before sending readings.")
     store = get_store()
     body = util.json_body()
     try:

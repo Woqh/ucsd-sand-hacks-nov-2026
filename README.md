@@ -14,6 +14,8 @@ protocol), and `/api/model/*` returns fixed mock data unless the bridge is strea
 [Simulate the phone](#simulate-the-phone) ·
 [Troubleshooting](#troubleshooting) · [Layout](#layout) · [Deploy](#deploy-vercel--tiger-cloud)
 
+See the [documentation index](docs/README.md), [code map](codemap.md), and [contributing guide](CONTRIBUTING.md) for navigation and development checks.
+
 ## Quick start (no accounts, no phone needed)
 
 Needs Python 3.12+ and Node 20.19+ (or 22.12+; Vite 8 requires it). From the repo root:
@@ -75,7 +77,7 @@ repo root (copy [`.env.example`](.env.example); it's gitignored, never commit re
 | `DATABASE_URL` | A real database (Tiger Cloud) | Unset = in-memory store. Contains the database password: server-only secret |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Desktop notifications | `python scripts/gen_vapid.py` |
 | `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_AUTH_KEY`, `APNS_BUNDLE_ID`, `APNS_USE_SANDBOX` | iPhone notifications | From your Apple Developer account |
-| `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional Gemini coaching profile, "ask about your habits", "describe your day" | Unset = those buttons say Gemini isn't on, and the on-device profile still works. **Use a key from a billing-enabled (paid) Google project**: Google's terms for the free tier allow using inputs to improve its products and forbid personal or sensitive data. Default model `gemini-3.5-flash-lite` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional Gemini coaching profile, "ask about your habits", "describe your day" | Unset = those buttons say Gemini isn't on, and the on-device profile still works. **Use a key from a billing-enabled (paid) Google project**: Google's terms for the free tier allow using inputs to improve its products and forbid personal or sensitive data. Default model `gemini-3.8-flash` |
 | `ENABLE_DEV_ROUTES` | Demo seeding + the dashboard's "Load demo data" button | `1` to enable. Leave unset on anything public |
 | `DEV_DB_FILE` | Where the in-memory store saves | Optional. Default `.devdb.json` (delete it to reset local data) |
 
@@ -102,7 +104,7 @@ rate-limited (6 per hour per user, per server instance) and failures fall back t
 - **Paid tier required for real users.** Google's Gemini API terms say that on the free tier, inputs may be used to
   improve its products and reviewed by humans, and that you must not send personal or sensitive information. Use a key
   from a billing-enabled project, and re-read the current terms before relying on this.
-- Default model `gemini-3.5-flash-lite`; override with `GEMINI_MODEL`. The Gemini call has a 30 s timeout, so
+- Default model `gemini-3.8-flash`; override with `GEMINI_MODEL`. The Gemini call has a 30 s timeout, so
   `vercel.json` gives the function 45 s.
 - It has **not been run against the live Gemini API** in this repo (no key was available); the tests use a fake client
   and the real SDK's config types. Try it once with your key before demoing it.
@@ -186,7 +188,7 @@ In short:
    placeholder and says why.
 4. Choose **which way you face** (Left or Right) on the page, then **Send readings to the dashboard**: the tab acts as
    the phone, so the readings go through the model into the database and Live, alerts, analytics and Coach run off
-   them. **Set my goal posture** calibrates from the same feed. It replaces any paired phone.
+   them. Allow data collection before sending readings. The camera uses the upright reference and replaces any paired sensor.
 
 Frames go from the browser tab to the model server on the same computer, are analysed in memory and
 dropped; the hosted API still accepts no images. Only numbers reach the database.
@@ -199,7 +201,7 @@ standard library. Use it to develop and demo the dashboard and alerts without a 
 real model, and as the demo fallback.
 
 1. **Start the API and the dashboard** (Quick start, terminals 1 and 2).
-2. **Get a pairing code.** Either open the dashboard, go to **Pair → Create my dashboard**, or run `python scripts/seed.py` (also fills six weeks of history and weekly demo pain check-ins, and prints a login link). Codes last 10 minutes; **Pair → New code** makes another.
+2. **Allow data collection and get a pairing code.** Enable consent on Pair or Settings before streaming readings. Either open the dashboard, go to **Pair → Create my dashboard**, or run `python scripts/seed.py` (also fills six weeks of history and weekly demo pain check-ins, and prints a login link). Codes last 10 minutes; **Pair → New code** makes another.
 3. **Make nudges quick (optional).** In **Settings**, drag **Slouch threshold** to 5–10 s so you don't wait 30 s.
 4. **Run the simulator** in a new terminal (venv active):
 
@@ -239,7 +241,7 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 - One phone per account: pairing a new device (or a second `--code`) invalidates the old token; the old simulator then fails with "no longer paired".
 - Each run uses a fresh session ID, and starting one closes the previous session cleanly.
 - **Test going offline:** stop the simulator. After about 15 s the Live page shows the "phone hasn't reported" banner and `Away`.
-- The simulator can't test iPhone push (no APNs token); use the real app and **Test iPhone alert**. It sends the stub model's numbers, not real posture.
+- The simulator sends synthetic readings. To test delivery, pair an external receiver using [iPhone alerts](docs/iphone-alerts.md) and use **Test phone alert**.
 - On a Mac, the iPhone app itself also runs in the Xcode Simulator on synthetic frames and the stub model (`ios/README.md`).
 
 ## Troubleshooting
@@ -269,10 +271,9 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 | `ios/` | SwiftUI app (see `ios/README.md`; **not yet built**) |
 | `scripts/` | `seed.py`, `simulate.py`, `init_db.py`, `gen_vapid.py`, `check_codemap.py`; laptop camera path: `model_server.py`, `posture_model.py` (the model goes here), `camera_test.py` |
 | `docs/` | `openapi.yaml`, `api.md`, `camera-setup.md`, `hardware.md`, `health-claims.md`, `demo-script.md` |
-| `features.md` | Analytics and personalization roadmap, Gemini ideas, and what the health evidence does and doesn't support |
 | `pitch.md` | The pitch: mission, demo flow, Data for Good sources, Tiger Data story, built-vs-next, expected Q&A |
 
-`codemap.md` maps every file for quick navigation (and is what Claude reads first, per `CLAUDE.md`).
+[Code map](codemap.md) lists source files by area. [Documentation index](docs/README.md) links the setup guides.
 
 ## Deploy (Vercel + Tiger Cloud)
 
@@ -284,3 +285,16 @@ To rerun without a new code, reuse the token. cmd.exe: `set "SITWISE_DEVICE_TOKE
 4. **Turn off Deployment Protection** for the project, or the phone and judges' browsers hit an auth wall.
 5. Put the temporary `https://<project>.vercel.app` URL in `ios/Sitwise/Config.swift`.
 6. If the build image has no Node, build the dashboard locally (`cd web && npm run build`) and commit `public/` (remove it from `.gitignore`).
+
+### Data collection and Gemini suggestions
+
+Posture collection starts disabled for new and existing dashboards without a saved opt-in.
+Enable **Consent to data collection** on Pair, Camera, or Settings before sending readings.
+Withdrawal blocks new readings at the API, including from an already paired phone; it does not delete history.
+The dashboard and camera no longer require calibration. The camera uses the upright reference.
+
+For **Coach → Profile → Gemini suggestor**, set `GEMINI_API_KEY` in the server's environment
+(or local `.env` when running Flask), then restart the API. Never put the key in a Vite variable or browser code.
+The suggestor previews the de-identified data, requires separate consent for each request, and calls
+`POST /api/coach/analyze`. Suggestions are saved in this browser. Missing configuration and service
+errors leave the local profile available. `GEMINI_MODEL` can override the default.
